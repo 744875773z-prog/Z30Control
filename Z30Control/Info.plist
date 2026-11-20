@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>zh_CN</string>
+    <key>CFBundleDisplayName</key>
+    <string>Z30 影控</string>
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.nikonpro.z30control</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>$(PRODUCT_NAME)</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSRequiresIPhoneOS</key>
+    <true/>
+    
+    <!-- 本地局域网权限 (必须声明，否则 iOS 14+ 无法连接相机 Wi-Fi 15740 端口) -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Z30 影控需要访问本地网络，以建立与尼康相机的 PTP/IP 高速连接，用于实时取景、参数调节与照片传输。</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_ptp._tcp</string>
+        <string>_ptp-ip._tcp</string>
+    </array>
+    
+    <!-- 系统相册读取与保存权限 (必须声明，否则无法保存照片到手机) -->
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>我们需要保存权限，以便将从 Z30 相机下载的原始照片或套用胶片滤镜后的成片存入您的 iPhone 相册。</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>需要访问相册，以显示您已从相机导入的照片与素材。</string>
+    
+    <!-- 蓝牙权限 (用于后续拓展 BLE 自动唤醒相机 Wi-Fi) -->
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>用于搜索并唤醒身边的尼康 Z30 相机。</string>
+    <key>NSBluetoothPeripheralUsageDescription</key>
+    <string>用于连接尼康相机的蓝牙低功耗信道。</string>
+    
+    <!-- 后台下载传输模式 (确保摄影师锁屏或切后台时，相机打保护键仍能自动接收照片) -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>fetch</string>
+        <string>processing</string>
+    </array>
+    
+    <!-- 屏幕旋转支持 (支持横屏作为专业电影监视器) -->
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+    
+    <!-- 外观默认偏好暗黑模式 -->
+    <key>UIUserInterfaceStyle</key>
+    <string>Dark</string>
+    
+    <key>UILaunchScreen</key>
+    <dict>
+        <key>UIColorName</key>
+        <string>black</string>
+    </dict>
+</dict>
+</plist>

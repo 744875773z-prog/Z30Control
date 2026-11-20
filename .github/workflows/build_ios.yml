@@ -1,0 +1,55 @@
+name: 构建 iOS 应用程序包 (Build Z30Control IPA)
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch: # 支持在 GitHub 网页上一键手动点击触发构建
+
+jobs:
+  build-ipa:
+    name: 自动化编译与打包 iOS IPA
+    runs-on: macos-14
+
+    steps:
+      - name: 检出仓库代码
+        uses: actions/checkout@v4
+
+      - name: 选择 Xcode 版本
+        run: |
+          sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+          xcodebuild -version
+
+      - name: 执行 Swift 单元测试与语法检查
+        run: |
+          swift test
+
+      - name: 编译并生成 Release .app 包
+        run: |
+          xcodebuild build \
+            -scheme Z30Control \
+            -destination "generic/platform=iOS" \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: 将 .app 打包封装为标准 .ipa 安装包
+        run: |
+          mkdir -p Payload
+          APP_PATH=$(find build/Build/Products/Release-iphoneos -name "*.app" | head -n 1)
+          if [ -d "$APP_PATH" ]; then
+            cp -r "$APP_PATH" Payload/
+            zip -r Z30Control_unsigned.ipa Payload
+            echo "✅ 成功构建 IPA 安装包: Z30Control_unsigned.ipa"
+          else
+            echo "⚠️ 未找到编译的 .app 文件，打包跳过"
+          fi
+
+      - name: 发布构建产物 (上传 IPA 供用户直接下载)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Z30Control-iOS-IPA
+          path: Z30Control_unsigned.ipa
+          retention-days: 14
