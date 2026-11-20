@@ -5,64 +5,90 @@ on:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
-  workflow_dispatch: # 允许在 GitHub 网页上随时手动点击绿色“Run workflow”按钮
+  workflow_dispatch:
 
 jobs:
   build-ipa:
     name: 编译与打包 iOS IPA
-    runs-on: macos-13
+    runs-on: macos-latest
 
     steps:
       - name: 检出项目源代码
         uses: actions/checkout@v4
 
-      - name: 配置 macOS 与 Xcode 环境
+      - name: 检查 macOS 与 Xcode 环境
         run: |
-          # 动态选择预装的 Xcode 15+ 环境
-          if [ -d "/Applications/Xcode_15.4.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
-          elif [ -d "/Applications/Xcode_15.2.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_15.2.app/Contents/Developer
-          elif [ -d "/Applications/Xcode_15.0.1.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_15.0.1.app/Contents/Developer
-          fi
+          echo "=== 运行环境概要 ==="
+          sw_vers
           xcodebuild -version
           swift --version
+          xcrun --sdk iphoneos --show-sdk-path
 
-      - name: 执行 Swift 核心语法与协议回归检查
+      - name: 编译 iOS 原生 ARM64 二进制文件
         run: |
-          swift package dump-package
+          mkdir -p Payload/Z30Control.app
+          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+          echo "使用 iOS SDK 路径: $SDK_PATH"
+          
+          # 收集所有 Swift 源代码
+          find Z30Control -name "*.swift" > swift_sources.txt
+          echo "已索引的源代码文件:"
+          cat swift_sources.txt
+          
+          # 使用官方 swiftc 直接编译为 iOS 原生 ARM64 Mach-O
+          xcrun --sdk iphoneos swiftc \
+            -target arm64-apple-ios16.0 \
+            -sdk "$SDK_PATH" \
+            -O \
+            -whole-module-optimization \
+            -parse-as-library \
+            -emit-executable \
+            -o Payload/Z30Control.app/Z30Control \
+            $(cat swift_sources.txt)
+          
+          chmod +x Payload/Z30Control.app/Z30Control
+          echo "✅ 成功编译 iOS Mach-O 二进制文件:"
+          file Payload/Z30Control.app/Z30Control
 
-      - name: 编译 iOS Release 二进制与应用程序 Bundle
+      - name: 组装 App Bundle、Metal 着色器与内置资源
         run: |
-          xcodebuild build \
-            -scheme Z30Control \
-            -destination "generic/platform=iOS" \
-            -configuration Release \
-            -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY=""
-
-      - name: 封装为标准 iOS .ipa 安装包 (Payload 架构)
-        run: |
-          mkdir -p Payload
-          # 检索生成的 .app 目录
-          APP_PATH=$(find build -name "*.app" -type d | head -n 1)
-          if [ -z "$APP_PATH" ]; then
-            echo "未在默认路径检索到 .app，正在自动封装制品..."
-            mkdir -p "Payload/Z30Control.app"
-            cp -r Z30Control/* "Payload/Z30Control.app/"
-            cp -r build/Build/Products/Release-iphoneos/* "Payload/Z30Control.app/" 2>/dev/null || true
-          else
-            echo "找到编译完成的 App: $APP_PATH"
-            cp -r "$APP_PATH" Payload/
+          # 1. 注入 Info.plist
+          cp Z30Control/Info.plist Payload/Z30Control.app/Info.plist
+          
+          # 2. 编译 Metal 硬件加速着色器
+          if [ -f "Z30Control/Resources/Shaders/LUTShader.metal" ]; then
+            echo "正在编译 Metal GPU 着色器..."
+            xcrun --sdk iphoneos metal -c Z30Control/Resources/Shaders/LUTShader.metal -o default.air
+            xcrun --sdk iphoneos metallib default.air -o Payload/Z30Control.app/default.metallib
+            echo "✅ Metal 着色库编译完成: default.metallib"
           fi
           
-          # 打包为标准 zip 并更名为 .ipa
+          # 3. 复制内置 3D LUT 滤镜 (.cube)
+          if [ -d "Z30Control/Resources/BuiltinLUTs" ]; then
+            mkdir -p Payload/Z30Control.app/BuiltinLUTs
+            cp -r Z30Control/Resources/BuiltinLUTs/* Payload/Z30Control.app/BuiltinLUTs/
+            echo "✅ 已包含内置 LUT 滤镜库"
+          fi
+          
+          # 4. 生成与复制应用高清图标
+          ICON_SRC="Z30Control/Resources/Assets.xcassets/AppIcon.appiconset/icon_1024.png"
+          if [ -f "$ICON_SRC" ]; then
+            cp "$ICON_SRC" Payload/Z30Control.app/AppIcon60x60@2x.png
+            cp "$ICON_SRC" Payload/Z30Control.app/AppIcon60x60@3x.png
+            cp "$ICON_SRC" Payload/Z30Control.app/AppIcon.png
+            echo "✅ 已注入 1024x1024 尼康黑金镜头图标"
+          fi
+          
+          # 5. 生成标准 PkgInfo
+          echo -n "APPL????" > Payload/Z30Control.app/PkgInfo
+
+      - name: 封装为标准 iOS .ipa 安装包
+        run: |
           zip -r -q Z30Control.ipa Payload
-          echo "✅ 成功生成 IPA 安装包文件: Z30Control.ipa"
+          echo "=========================================="
+          echo "🎉 恭喜！已成功封装 iOS .ipa 安装包！"
           ls -lh Z30Control.ipa
+          echo "=========================================="
 
       - name: 上传构建产物 (提供网页一键下载)
         uses: actions/upload-artifact@v4
