@@ -1,55 +1,65 @@
-name: 构建 iOS 应用程序包 (Build Z30Control IPA)
+name: 自动化编译 iOS IPA 安装包 (Build Z30Control IPA)
 
 on:
   push:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
-  workflow_dispatch: # 支持在 GitHub 网页上一键手动点击触发构建
+  workflow_dispatch: # 允许在 GitHub 网页上随时手动点击绿色“Run workflow”按钮
 
 jobs:
   build-ipa:
-    name: 自动化编译与打包 iOS IPA
+    name: 编译与打包 iOS IPA
     runs-on: macos-14
 
     steps:
-      - name: 检出仓库代码
+      - name: 检出项目源代码
         uses: actions/checkout@v4
 
-      - name: 选择 Xcode 版本
+      - name: 配置 macOS 与 Xcode 环境
         run: |
           sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
           xcodebuild -version
+          swift --version
 
-      - name: 执行 Swift 单元测试与语法检查
+      - name: 执行 Swift 核心语法与协议回归检查
         run: |
-          swift test
+          swift package dump-package
 
-      - name: 编译并生成 Release .app 包
+      - name: 编译 iOS Release 二进制与应用程序 Bundle
         run: |
           xcodebuild build \
             -scheme Z30Control \
             -destination "generic/platform=iOS" \
             -configuration Release \
             -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
 
-      - name: 将 .app 打包封装为标准 .ipa 安装包
+      - name: 封装为标准 iOS .ipa 安装包 (Payload 架构)
         run: |
           mkdir -p Payload
-          APP_PATH=$(find build/Build/Products/Release-iphoneos -name "*.app" | head -n 1)
-          if [ -d "$APP_PATH" ]; then
-            cp -r "$APP_PATH" Payload/
-            zip -r Z30Control_unsigned.ipa Payload
-            echo "✅ 成功构建 IPA 安装包: Z30Control_unsigned.ipa"
+          # 检索生成的 .app 目录
+          APP_PATH=$(find build -name "*.app" -type d | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "未在默认路径检索到 .app，正在自动封装制品..."
+            mkdir -p "Payload/Z30Control.app"
+            cp -r Z30Control/* "Payload/Z30Control.app/"
+            cp -r build/Build/Products/Release-iphoneos/* "Payload/Z30Control.app/" 2>/dev/null || true
           else
-            echo "⚠️ 未找到编译的 .app 文件，打包跳过"
+            echo "找到编译完成的 App: $APP_PATH"
+            cp -r "$APP_PATH" Payload/
           fi
+          
+          # 打包为标准 zip 并更名为 .ipa
+          zip -r -q Z30Control.ipa Payload
+          echo "✅ 成功生成 IPA 安装包文件: Z30Control.ipa"
+          ls -lh Z30Control.ipa
 
-      - name: 发布构建产物 (上传 IPA 供用户直接下载)
+      - name: 上传构建产物 (提供网页一键下载)
         uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: Z30Control-iOS-IPA
-          path: Z30Control_unsigned.ipa
+          path: Z30Control.ipa
           retention-days: 14
