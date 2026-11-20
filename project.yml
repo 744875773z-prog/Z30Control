@@ -1,0 +1,23 @@
+name: Z30Control
+options:
+  bundleIdPrefix: com.nikon
+targets:
+  Z30Control:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: Z30Control
+    info:
+      path: Z30Control/Info.plist
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.nikon.z30control
+      INFOPLIST_FILE: Z30Control/Info.plist
+      CODE_SIGNING_ALLOWED: NO
+      CODE_SIGNING_REQUIRED: NO
+      CODE_SIGN_IDENTITY: ""
+      CURRENT_PROJECT_VERSION: 1
+      MARKETING_VERSION: 1.0.0
+      SWIFT_VERSION: "5.9"
+      ENABLE_BITCODE: NO
+      GENERATE_INFOPLIST_FILE: NO

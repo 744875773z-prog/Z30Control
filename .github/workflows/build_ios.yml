@@ -16,77 +16,52 @@ jobs:
       - name: 检出项目源代码
         uses: actions/checkout@v4
 
-      - name: 检查 macOS 与 Xcode 环境
+      - name: 安装与配置工程生成器 (XcodeGen)
         run: |
-          echo "=== 运行环境概要 ==="
-          sw_vers
-          xcodebuild -version
-          swift --version
-          xcrun --sdk iphoneos --show-sdk-path
+          echo "=== 正在准备 XcodeGen 环境 ==="
+          brew install xcodegen || true
+          xcodegen --version
+          
+          echo "=== 正在自动生成 Xcode 原生工程 ==="
+          xcodegen generate
+          ls -la Z30Control.xcodeproj
 
-      - name: 编译 iOS 原生 ARM64 二进制文件
+      - name: 使用 xcodebuild 编译 iOS Release App Bundle
         run: |
-          mkdir -p Payload/Z30Control.app
-          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
-          echo "使用 iOS SDK 路径: $SDK_PATH"
-          
-          # 收集所有 Swift 源代码
-          find Z30Control -name "*.swift" > swift_sources.txt
-          echo "已索引的源代码文件:"
-          cat swift_sources.txt
-          
-          # 使用官方 swiftc 直接编译为 iOS 原生 ARM64 Mach-O
-          xcrun --sdk iphoneos swiftc \
-            -target arm64-apple-ios16.0 \
-            -sdk "$SDK_PATH" \
-            -O \
-            -whole-module-optimization \
-            -parse-as-library \
-            -emit-executable \
-            -o Payload/Z30Control.app/Z30Control \
-            $(cat swift_sources.txt)
-          
-          chmod +x Payload/Z30Control.app/Z30Control
-          echo "✅ 成功编译 iOS Mach-O 二进制文件:"
-          file Payload/Z30Control.app/Z30Control
+          echo "=== 开始编译 iOS 原生应用包 ==="
+          xcodebuild build \
+            -project Z30Control.xcodeproj \
+            -scheme Z30Control \
+            -destination "generic/platform=iOS" \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            COMPILER_INDEX_STORE_ENABLE=NO
 
-      - name: 组装 App Bundle、Metal 着色器与内置资源
+      - name: 组装与封装为标准 iOS .ipa 安装包
         run: |
-          # 1. 注入 Info.plist
-          cp Z30Control/Info.plist Payload/Z30Control.app/Info.plist
-          
-          # 2. 编译 Metal 硬件加速着色器
-          if [ -f "Z30Control/Resources/Shaders/LUTShader.metal" ]; then
-            echo "正在编译 Metal GPU 着色器..."
-            xcrun --sdk iphoneos metal -c Z30Control/Resources/Shaders/LUTShader.metal -o default.air
-            xcrun --sdk iphoneos metallib default.air -o Payload/Z30Control.app/default.metallib
-            echo "✅ Metal 着色库编译完成: default.metallib"
+          mkdir -p Payload
+          # 寻找编译完成的 Release-iphoneos .app 目录
+          APP_PATH=$(find build/Build/Products/Release-iphoneos -name "*.app" -type d | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            APP_PATH=$(find build -name "*.app" -type d | head -n 1)
           fi
           
-          # 3. 复制内置 3D LUT 滤镜 (.cube)
-          if [ -d "Z30Control/Resources/BuiltinLUTs" ]; then
-            mkdir -p Payload/Z30Control.app/BuiltinLUTs
-            cp -r Z30Control/Resources/BuiltinLUTs/* Payload/Z30Control.app/BuiltinLUTs/
-            echo "✅ 已包含内置 LUT 滤镜库"
+          echo "定位到编译成功的 App: $APP_PATH"
+          cp -r "$APP_PATH" Payload/
+          
+          # 检查并注入 BuiltinLUTs 滤镜（如果未自动复制）
+          if [ -d "Z30Control/Resources/BuiltinLUTs" ] && [ ! -d "Payload/Z30Control.app/BuiltinLUTs" ]; then
+            mkdir -p "Payload/Z30Control.app/BuiltinLUTs"
+            cp -r Z30Control/Resources/BuiltinLUTs/* "Payload/Z30Control.app/BuiltinLUTs/"
           fi
           
-          # 4. 生成与复制应用高清图标
-          ICON_SRC="Z30Control/Resources/Assets.xcassets/AppIcon.appiconset/icon_1024.png"
-          if [ -f "$ICON_SRC" ]; then
-            cp "$ICON_SRC" Payload/Z30Control.app/AppIcon60x60@2x.png
-            cp "$ICON_SRC" Payload/Z30Control.app/AppIcon60x60@3x.png
-            cp "$ICON_SRC" Payload/Z30Control.app/AppIcon.png
-            echo "✅ 已注入 1024x1024 尼康黑金镜头图标"
-          fi
-          
-          # 5. 生成标准 PkgInfo
-          echo -n "APPL????" > Payload/Z30Control.app/PkgInfo
-
-      - name: 封装为标准 iOS .ipa 安装包
-        run: |
+          # 生成标准 IPA zip 压缩包
           zip -r -q Z30Control.ipa Payload
           echo "=========================================="
-          echo "🎉 恭喜！已成功封装 iOS .ipa 安装包！"
+          echo "🎉 恭喜！已成功生成 iOS .ipa 安装包！"
           ls -lh Z30Control.ipa
           echo "=========================================="
 
