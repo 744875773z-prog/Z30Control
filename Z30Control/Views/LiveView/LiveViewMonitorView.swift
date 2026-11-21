@@ -22,7 +22,6 @@ public struct LiveViewMonitorView: View {
     @State private var isShowingGrid = true
     @State private var isCleanScreen = false // DISP 清屏按键
     @State private var isFullScreen = false  // 全屏展开监看
-    @State private var isShowingExpandedParams = false // 展开其余次要参数
     @State private var touchFocusPosition: CGPoint? = nil
     @State private var isFocusPulsing = false
     @State private var instantPreviewName: String? = nil
@@ -162,14 +161,6 @@ public struct LiveViewMonitorView: View {
         connectionService.client.stopLiveView()
     }
     
-    private func toggleLiveViewForActiveTransport() {
-        if isAnyLiveViewStreaming {
-            stopLiveViewForActiveTransport()
-        } else {
-            startLiveViewForActiveTransport()
-        }
-    }
-    
     // MARK: - 监看核心视口 (支持实时图像渲染、触控对焦、参考线与即时回放)
     private func cameraViewport(isLandscape: Bool) -> some View {
         GeometryReader { geo in
@@ -272,15 +263,6 @@ public struct LiveViewMonitorView: View {
         }
         .frame(width: size.width, height: size.height)
         .clipped()
-    }
-
-    // v1.0.20：取景按钮带上帧分辨率（相机实际发来的那帧多大）。
-    private var liveViewStreamLabel: String {
-        let size = streamService.currentFrameSize
-        if size != .zero {
-            return "取景中 \(Int(size.width))×\(Int(size.height))"
-        }
-        return "取景中"
     }
 
     // MARK: - 真实拟真光学取景底图 (消除死黑画面)
@@ -405,33 +387,10 @@ public struct LiveViewMonitorView: View {
     // MARK: - 竖屏专业监视器布局 (对齐网页版，可调三要素在上，不可调在下可折叠)
     private var portraitProHUD: some View {
         GeometryReader { geo in
-            // v1.0.15：这里不要再加 safeAreaInsets.top——根视图已经被系统按安全区
-            // 往下顶了一次（灵动岛约 59pt），而这里的 geo.safeAreaInsets.top 还是 59，
-            // 再加就是双份：实测顶栏被顶到 120pt 才出现，上面空一大条黑边（用户
-            // 2026-11-21 18:03 截图）。只留 8pt 固定间距就够了。
-            let topPad: CGFloat = 8
             VStack(spacing: 0) {
-                if !isCleanScreen {
-                    // 顶部状态条与线连指引入口 (顶部 padding 自动适配灵动岛高度)
-                    topConnectionBanner
-                        .padding(.horizontal, 14)
-                        .padding(.top, topPad + 4)
-                        .padding(.bottom, 6)
-                    
-                    // 核心曝光三要素调控条 (快门、光圈、ISO)
-                    coreThreeParamsHUD
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 6)
-                    
-                    // 次级不可调节/状态参数折叠区
-                    if isShowingExpandedParams {
-                        expandedSpecsStrip
-                            .padding(.horizontal, 12)
-                            .padding(.bottom, 6)
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                    }
-                }
-                
+                // v1.0.24：上面参数全删了（用户 2026-11-21 20:43 截图圈的
+                // 顶部整块：状态条 + 快门/光圈/ISO + 模式/白平衡/测光/±EV）。
+                // 顶部留空，画面干净；满屏/完整切换挪到底部工具组。
                 Spacer()
 
                 // v1.0.15：未连接时的空状态放在这里（参数条和底栏之间），上下两个
@@ -590,143 +549,6 @@ public struct LiveViewMonitorView: View {
     }
     
     // MARK: - 顶部状态条与线连指引入口
-    private var topConnectionBanner: some View {
-        HStack(spacing: 8) {
-            // 连接状态标
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(isDeviceConnected ? NikonTheme.readyGreen : Color.orange)
-                    .frame(width: 8, height: 8)
-                Text(isDeviceConnected ? "已在线: \(usbCamera.connectedDeviceName.isEmpty ? cameraState.modelName : usbCamera.connectedDeviceName)" : "未连相机")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(.white)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(Color.black.opacity(0.6))
-            .cornerRadius(12)
-            
-            Spacer()
-            
-            if isDeviceConnected {
-                Button(action: {
-                    NikonTheme.triggerHaptic(style: .medium)
-                    toggleLiveViewForActiveTransport()
-                }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: isAnyLiveViewStreaming ? "video.fill" : "video.slash")
-                            .font(.system(size: 10, weight: .bold))
-                        Text(isAnyLiveViewStreaming ? liveViewStreamLabel : "启动取景")
-                            .font(.system(size: 11, weight: .bold))
-                    }
-                    .foregroundColor(isAnyLiveViewStreaming ? .black : .white)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
-                    .background(isAnyLiveViewStreaming ? NikonTheme.readyGreen : NikonTheme.accentBlue)
-                    .cornerRadius(12)
-                }
-            }
-            
-            // v1.0.14：满屏 / 完整 切换。满屏铺满视口（两边裁一点），
-            // 完整显示整帧（上下会有黑边）。默认满屏。
-            Button(action: {
-                NikonTheme.triggerHaptic(style: .light)
-                withAnimation(.easeInOut(duration: 0.2)) { isFillScreen.toggle() }
-            }) {
-                HStack(spacing: 4) {
-                    Image(systemName: isFillScreen ? "arrow.up.left.and.arrow.down.right" : "arrow.down.right.and.arrow.up.left")
-                        .font(.system(size: 10, weight: .bold))
-                    Text(isFillScreen ? "满屏" : "完整")
-                        .font(.system(size: 11, weight: .bold))
-                }
-                .foregroundColor(.white)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 5)
-                .background(Color.black.opacity(0.6))
-                .cornerRadius(12)
-            }
-
-            // USB-C 有线直连指引药丸按钮
-            Button(action: {
-                NikonTheme.triggerHaptic(style: .light)
-                showingWiredHelp = true
-            }) {
-                HStack(spacing: 4) {
-                    Image(systemName: "cable.connector")
-                        .font(.system(size: 10, weight: .bold))
-                    Text(isDeviceConnected ? "USB-C 有线" : "线连指引 (必看)")
-                        .font(.system(size: 11, weight: .bold))
-                }
-                .foregroundColor(.black)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(isDeviceConnected ? Color.white : NikonTheme.nikonYellow)
-                .cornerRadius(12)
-            }
-        }
-    }
-    
-    // MARK: - 核心可调三要素 (快门、光圈、ISO) 药丸列
-    private var coreThreeParamsHUD: some View {
-        HStack(spacing: 8) {
-            hudParamPill(title: "快门", value: cameraState.shutterSpeed, isActionable: isParamEditable("shutter")) {
-                activeParamPicker = "shutter"
-            }
-            hudParamPill(title: "光圈", value: cameraState.aperture, isActionable: isParamEditable("aperture")) {
-                activeParamPicker = "aperture"
-            }
-            hudParamPill(title: "ISO", value: cameraState.isoActual, isActionable: isParamEditable("iso")) {
-                activeParamPicker = "iso"
-            }
-            
-            // 展开其余参数的小按钮
-            Button(action: {
-                NikonTheme.triggerHaptic(style: .light)
-                withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
-                    isShowingExpandedParams.toggle()
-                }
-            }) {
-                VStack(spacing: 2) {
-                    Image(systemName: isShowingExpandedParams ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 10, weight: .bold))
-                    Text(isShowingExpandedParams ? "收起" : "更多")
-                        .font(.system(size: 9, weight: .semibold))
-                }
-                .foregroundColor(.white.opacity(0.8))
-                .frame(width: 44, height: 44)
-                .background(Color.black.opacity(0.55))
-                .cornerRadius(12)
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.15), lineWidth: 0.8))
-            }
-        }
-    }
-    
-    // MARK: - 次级参数展开抽屉 (白平衡、测光、EV、格式等)
-    private var expandedSpecsStrip: some View {
-        HStack(spacing: 6) {
-            // v1.0.14：模式只显示不点——0x500E 在尼康上是只读的（gphoto2
-            // 写它会被相机拒绝），模式只能转机身拨盘。AUTO/U1/U2/U3 现在
-            // 都能认出来了（短标签，不会和 A 档撞）；认不出来的显示原始值。
-            hudParamPill(title: "模式", value: modeDisplayText, isActionable: false)
-            hudParamPill(title: "白平衡", value: cameraState.whiteBalance.rawValue.components(separatedBy: " ").first ?? "自动", isActionable: true) {
-                activeParamPicker = "wb"
-            }
-            hudParamPill(title: "测光", value: cameraState.meteringMode.rawValue.prefix(2).description, isActionable: false)
-            hudParamPill(title: "± EV", value: cameraState.exposureCompensation, isActionable: isParamEditable("ev")) {
-                activeParamPicker = "ev"
-            }
-        }
-    }
-
-    /// 模式药丸显示：认得出的显示短标签（AUTO/U1/U2/U3），
-    /// 认不出的显示原始值（如 0x8014），方便对表修正。
-    private var modeDisplayText: String {
-        if cameraState.exposureMode == .unknown {
-            return String(format: "0x%04X", cameraState.exposureModeRaw)
-        }
-        return cameraState.exposureMode.shortLabel
-    }
-    
     // MARK: - v1.0.15：未连接时的空状态（标题 + 两个连接入口）
     private var disconnectedEmptyState: some View {
         VStack(spacing: 18) {
@@ -788,30 +610,51 @@ public struct LiveViewMonitorView: View {
 
     // MARK: - 底部操作行 (清屏 DISP + 全屏大快门，v1.0.19：AF-ON 不要了)
     private var portraitBottomControlDeck: some View {
-        HStack(spacing: 20) {
-            // DISP 清屏按键
-            Button(action: {
-                NikonTheme.triggerHaptic(style: .medium)
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    isCleanScreen = true
+        // v1.0.24：快门严格居中——三组等宽（左 DISP+满屏 / 中快门 / 右网格+增强），
+        // 快门落在屏幕正中央。之前是 Spacer 两边夹，快门被右边两个键顶偏。
+        // 满屏/完整切换从顶部挪到这里，功能没删。
+        HStack(spacing: 0) {
+            // 左组：DISP 清屏 + 满屏/完整切换（靠左）
+            HStack(spacing: 12) {
+                Button(action: {
+                    NikonTheme.triggerHaptic(style: .medium)
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isCleanScreen = true
+                    }
+                }) {
+                    VStack(spacing: 3) {
+                        Image(systemName: "eye.slash.fill")
+                            .font(.system(size: 16))
+                        Text("DISP")
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                    .foregroundColor(.white)
+                    .frame(width: 48, height: 48)
+                    .background(Color.black.opacity(0.6))
+                    .cornerRadius(14)
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.18), lineWidth: 0.8))
                 }
-            }) {
-                VStack(spacing: 3) {
-                    Image(systemName: "eye.slash.fill")
-                        .font(.system(size: 16))
-                    Text("DISP")
-                        .font(.system(size: 10, weight: .bold))
+
+                Button(action: {
+                    NikonTheme.triggerHaptic(style: .light)
+                    withAnimation(.easeInOut(duration: 0.2)) { isFillScreen.toggle() }
+                }) {
+                    VStack(spacing: 3) {
+                        Image(systemName: isFillScreen ? "arrow.up.left.and.arrow.down.right" : "arrow.down.right.and.arrow.up.left")
+                            .font(.system(size: 16))
+                        Text(isFillScreen ? "满屏" : "完整")
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                    .foregroundColor(.white)
+                    .frame(width: 48, height: 48)
+                    .background(Color.black.opacity(0.6))
+                    .cornerRadius(14)
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.18), lineWidth: 0.8))
                 }
-                .foregroundColor(.white)
-                .frame(width: 48, height: 48)
-                .background(Color.black.opacity(0.6))
-                .cornerRadius(14)
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.18), lineWidth: 0.8))
             }
-            
-            Spacer()
-            
-            // 主快门按钮
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            // 中：主快门按钮（严格居中）
             Button(action: {
                 triggerShutterCapture()
             }) {
@@ -825,44 +668,47 @@ public struct LiveViewMonitorView: View {
                         .frame(width: 50, height: 50)
                 }
             }
-            
-            Spacer()
-            
-            // 辅助网格切换
-            Button(action: {
-                NikonTheme.triggerHaptic(style: .light)
-                isShowingGrid.toggle()
-            }) {
-                VStack(spacing: 3) {
-                    Image(systemName: isShowingGrid ? "grid" : "grid.circle")
-                        .font(.system(size: 16))
-                    Text(isShowingGrid ? "网格" : "关")
-                        .font(.system(size: 10, weight: .bold))
-                }
-                .foregroundColor(.white)
-                .frame(width: 48, height: 48)
-                .background(Color.black.opacity(0.6))
-                .cornerRadius(14)
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.18), lineWidth: 0.8))
-            }
+            .frame(maxWidth: .infinity, alignment: .center)
 
-            // v1.0.20：取景增强开关（降噪+锐化，默认开）。
-            Button(action: {
-                NikonTheme.triggerHaptic(style: .light)
-                streamService.isEnhanceEnabled.toggle()
-            }) {
-                VStack(spacing: 3) {
-                    Image(systemName: "wand.and.stars")
-                        .font(.system(size: 16))
-                    Text(streamService.isEnhanceEnabled ? "增强" : "关")
-                        .font(.system(size: 10, weight: .bold))
+            // 右组：网格、增强（靠右）
+            HStack(spacing: 12) {
+                // 辅助网格切换
+                Button(action: {
+                    NikonTheme.triggerHaptic(style: .light)
+                    isShowingGrid.toggle()
+                }) {
+                    VStack(spacing: 3) {
+                        Image(systemName: isShowingGrid ? "grid" : "grid.circle")
+                            .font(.system(size: 16))
+                        Text(isShowingGrid ? "网格" : "关")
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                    .foregroundColor(.white)
+                    .frame(width: 48, height: 48)
+                    .background(Color.black.opacity(0.6))
+                    .cornerRadius(14)
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.18), lineWidth: 0.8))
                 }
-                .foregroundColor(streamService.isEnhanceEnabled ? NikonTheme.nikonYellow : .white)
-                .frame(width: 48, height: 48)
-                .background(Color.black.opacity(0.6))
-                .cornerRadius(14)
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.18), lineWidth: 0.8))
+
+                // v1.0.20：取景增强开关（降噪+锐化，默认开）。
+                Button(action: {
+                    NikonTheme.triggerHaptic(style: .light)
+                    streamService.isEnhanceEnabled.toggle()
+                }) {
+                    VStack(spacing: 3) {
+                        Image(systemName: "wand.and.stars")
+                            .font(.system(size: 16))
+                        Text(streamService.isEnhanceEnabled ? "增强" : "关")
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                    .foregroundColor(streamService.isEnhanceEnabled ? NikonTheme.nikonYellow : .white)
+                    .frame(width: 48, height: 48)
+                    .background(Color.black.opacity(0.6))
+                    .cornerRadius(14)
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.18), lineWidth: 0.8))
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
     }
     

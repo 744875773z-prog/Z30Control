@@ -2,6 +2,12 @@
 
 一款专为**尼康 Z30（Nikon Z30）**设计的专业级 iOS 相机控制、3D LUT 胶片监看、无线相册与“按相机保护键自动速传”应用程序。
 
+## v1.0.24 修复：上面参数全删掉，拍照键居中
+
+Yuan 2026-11-21 20:43 发截图（红圈）：顶部整块参数还没删掉——状态条（未连相机/满屏/线连指引）+ 快门/光圈/ISO + 模式/白平衡/测光/±EV + 收起；底部快门键不在正中央（被右边两个键顶偏，旧结构中心约 125pt，屏幕中心是 179pt）。
+
+这版：portraitProHUD 顶部整块全删（topConnectionBanner、coreThreeParamsHUD、expandedSpecsStrip、modeDisplayText、isShowingExpandedParams、toggleLiveViewForActiveTransport、liveViewStreamLabel；帧分辨率仍解析+上报，只是不再显示）。顶部留空。未连接空状态（USB-C 直连 / Wi-Fi 热点两个入口）还在，线连指引从那里进。底部 deck 改成三组等宽（左 DISP+满屏 / 中快门 / 右网格+增强），快门落在屏幕正中央；满屏/完整切换从顶部挪到左组，功能没删。
+
 ## v1.0.23 修复：去掉取景页的绿色横线+圆圈（电子水平仪）
 
 Yuan 2026-11-21 20:29 发截图：电子水平仪那条绿色横线+中间圆圈压在“未检测到相机信号”文字上。删掉了调用和定义。三等分线、点按对焦绿框不动。中间这块位置留空，他以后在这里加滤镜，滤镜要分类，现在不搞。

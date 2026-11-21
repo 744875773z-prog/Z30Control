@@ -111,7 +111,9 @@ def run():
     check("parse() 回填 pixelSize", "pixelSize: Self.parseJPEGSize(jpegData)" in parser)
     check("流服务上报 currentFrameSize",
           "currentFrameSize: CGSize" in svc and "currentFrameSize = frame.pixelSize" in svc)
-    check("取景按钮显示分辨率", "liveViewStreamLabel" in live)
+    # v1.0.24：顶部整块删了，取景按钮（带分辨率的那个）也没了；帧分辨率
+    # 仍在解析（parseJPEGSize）和上报（currentFrameSize），只是不再显示。
+    check("顶部取景按钮已删（v1.0.24）", "liveViewStreamLabel" not in live)
     check("横屏左翼也显示分辨率",
           "streamService.currentFrameSize" in live)
     check("增强开关在取景页（竖屏+横屏两处）",
