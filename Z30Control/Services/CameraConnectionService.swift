@@ -42,8 +42,11 @@ public final class CameraConnectionService: ObservableObject, PtpIpClientDelegat
         self.cameraState = cameraState
         self.client.delegate = self
         
-        // 启动时默认自适应触发有线直连探测
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+        // 1. 立即启动像素蛋糕同款 ImageCaptureCore 原生 USB 硬件总线监听
+        UsbCameraManager.shared.startListening()
+        
+        // 2. 启动时自动触发自适应连接检测
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
             self?.autoDetectAndConnect()
         }
     }
@@ -70,14 +73,21 @@ public final class CameraConnectionService: ObservableObject, PtpIpClientDelegat
     public func autoDetectAndConnect() {
         guard !isConnected && !isConnecting else { return }
         isConnecting = true
-        statusMessage = "正在自动探测 USB-C 线缆与相机通信..."
+        statusMessage = "正在探测 USB 硬件总线与相机..."
         
-        // 优先探测 USB-C 默认地址 192.168.1.1:15740
+        // 1. 优先激活像素蛋糕同款 ImageCaptureCore 原生硬件总线扫描
+        UsbCameraManager.shared.startListening()
+        if let cam = UsbCameraManager.shared.activeCamera {
+            cam.requestOpenSession()
+            return
+        }
+        
+        // 2. 同时探测网络信道 (默认地址 192.168.1.1:15740 与 192.168.0.1:15740)
         self.targetIP = "192.168.1.1"
         self.client.connect(host: "192.168.1.1", port: 15740)
         
-        // 5秒后如果未连上，尝试无线热点 192.168.0.1
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4.5) { [weak self] in
+        // 3秒后如果未连上，尝试无线热点 192.168.0.1
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
             guard let self = self, !self.isConnected else { return }
             print("[ConnectionService] 尝试备选无线网段 192.168.0.1...")
             self.targetIP = "192.168.0.1"
@@ -111,6 +121,7 @@ public final class CameraConnectionService: ObservableObject, PtpIpClientDelegat
     
     public func disconnect() {
         client.disconnect(isIntentional: true)
+        UsbCameraManager.shared.stopListening()
         isConnected = false
         isConnecting = false
         statusMessage = "已断开连接"

@@ -27,6 +27,10 @@
     <key>UILaunchStoryboardName</key>
     <string>LaunchScreen</string>
     
+    <!-- 外接数码相机硬件访问 (像素蛋糕同款 ImageCaptureCore 必需) -->
+    <key>NSCameraUsageDescription</key>
+    <string>Z30 影控需要访问外接数码相机设备，以通过 USB-C 数据线直接连接您的尼康相机，实现免配置秒连与即拍即传。</string>
+    
     <!-- 本地局域网权限 (必须声明，支持 USB-C 虚拟以太网网卡与 Wi-Fi 15740 端口) -->
     <key>NSLocalNetworkUsageDescription</key>
     <string>Z30 影控需要访问本地网络，以通过 USB-C 有线数据线或 Wi-Fi 建立与尼康相机的高速通信信道，用于低延迟实时取景、机身参数控制与照片传输。</string>

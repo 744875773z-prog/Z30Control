@@ -39,7 +39,9 @@ public final class MediaSyncService: ObservableObject {
     private let transferQueue = DispatchQueue(label: "com.z30control.transfer.serial", qos: .utility)
     
     public init() {
-        setupMockData()
+        // 初始真实空状态，等待连接相机真实介质
+        self.mediaItems = []
+        self.stats = FastTransferStats()
     }
     
     // MARK: - 捕获相机保护事件
@@ -201,21 +203,5 @@ public final class MediaSyncService: ObservableObject {
                 }
             }
         }
-    }
-    
-    private func setupMockData() {
-        let now = Date()
-        self.mediaItems = [
-            CameraMediaItem(id: 1001, filename: "DSC_2641.JPG", sizeBytes: 5_662_310, format: .jpeg, captureDate: now.addingTimeInterval(-120), isProtected: true, isDownloaded: true),
-            CameraMediaItem(id: 1002, filename: "DSC_2642.JPG", sizeBytes: 5_662_310, format: .jpeg, captureDate: now.addingTimeInterval(-240), isProtected: false, isDownloaded: true),
-            CameraMediaItem(id: 1003, filename: "DSC_2631.JPG", sizeBytes: 5_347_737, format: .jpeg, captureDate: now.addingTimeInterval(-600), isProtected: false, isDownloaded: true),
-            CameraMediaItem(id: 1004, filename: "DSC_2632.NEF", sizeBytes: 15_623_782, format: .rawNEF, captureDate: now.addingTimeInterval(-600), isProtected: false, isDownloaded: true),
-            CameraMediaItem(id: 1005, filename: "DSC_2637.JPG", sizeBytes: 1_258_291, format: .jpeg, captureDate: now.addingTimeInterval(-700), isProtected: false, isDownloaded: true),
-            CameraMediaItem(id: 1006, filename: "DSC_2631.NEF", sizeBytes: 15_623_782, format: .rawNEF, captureDate: now.addingTimeInterval(-700), isProtected: false, isDownloaded: true)
-        ]
-        
-        stats.indexedTotalFiles = 15415
-        stats.completedCount = 6
-        stats.protectedCount = 1
     }
 }

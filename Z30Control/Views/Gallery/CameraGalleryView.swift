@@ -61,9 +61,13 @@ public struct CameraGalleryView: View {
             }
             .padding(.horizontal, 18)
             
-            // 4. 内容展示 (网格 / 列表)
+            // 4. 内容展示 (网格 / 列表 / 空状态)
             ScrollView(showsIndicators: false) {
-                if isGridView {
+                if filteredItems.isEmpty {
+                    emptyGalleryStateView
+                        .padding(.horizontal, 18)
+                        .padding(.top, 20)
+                } else if isGridView {
                     mediaGridView
                         .padding(.horizontal, 18)
                 } else {
@@ -78,6 +82,34 @@ public struct CameraGalleryView: View {
         .sheet(item: $selectedItemForDetail) { item in
             PhotoExportSheet(item: item)
         }
+    }
+    
+    // MARK: - 无照片时的纯净空状态
+    private var emptyGalleryStateView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "sdcard")
+                .font(.system(size: 50))
+                .foregroundColor(NikonTheme.accentBlue.opacity(0.4))
+                .padding(.top, 40)
+            
+            VStack(spacing: 6) {
+                Text(syncService.mediaItems.isEmpty ? "未检测到相机存储介质" : "当前分类暂无素材")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(NikonTheme.textPrimary)
+                
+                Text(syncService.mediaItems.isEmpty ? "请使用 Type-C 数据线连接相机与手机，打开相机电源后读取 SD 卡照片" : "请切换上方分类查看其他照片")
+                    .font(.system(size: 13))
+                    .foregroundColor(NikonTheme.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 20)
+            }
+            .padding(.bottom, 40)
+        }
+        .frame(maxWidth: .infinity)
+        .background(NikonTheme.surfaceCard)
+        .cornerRadius(18)
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(NikonTheme.borderDim, lineWidth: 1.2))
+        .shadow(color: Color.black.opacity(0.02), radius: 8, x: 0, y: 2)
     }
     
     // MARK: - 筛选栏

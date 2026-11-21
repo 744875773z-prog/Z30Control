@@ -44,22 +44,19 @@ public struct RootTabView: View {
             let isLandscape = geometry.size.width > geometry.size.height
             
             VStack(spacing: 0) {
-                // MARK: - 主页面分发区 (占满上方，并在常规页面规避顶部状态栏)
+                // MARK: - 主页面分发区 (占满上方，贴合灵动岛安全区下方，绝无冗余空白)
                 Group {
                     switch selectedTab {
                     case .control:
                         ControlDashboardView(cameraState: cameraState)
-                            .padding(.top, max(geometry.safeAreaInsets.top, 20))
                     case .liveView:
                         LiveViewMonitorView(cameraState: cameraState, onExitToControl: {
                             selectedTab = .control
                         })
                     case .fastTransfer:
                         FastTransferView()
-                            .padding(.top, max(geometry.safeAreaInsets.top, 20))
                     case .gallery:
                         CameraGalleryView()
-                            .padding(.top, max(geometry.safeAreaInsets.top, 20))
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
