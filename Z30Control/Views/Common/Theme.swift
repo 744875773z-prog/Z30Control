@@ -8,6 +8,37 @@
 
 import SwiftUI
 
+public enum AppThemePreference: String, CaseIterable {
+    case system = "跟随系统"
+    case light = "日间明亮白 (Studio Light)"
+    case dark = "专业暗夜黑 (Pitch Black)"
+}
+
+public final class ThemeManager: ObservableObject {
+    public static let shared = ThemeManager()
+    
+    @Published public var preference: AppThemePreference = .light {
+        didSet {
+            UserDefaults.standard.set(preference.rawValue, forKey: "app_theme_pref")
+        }
+    }
+    
+    private init() {
+        if let saved = UserDefaults.standard.string(forKey: "app_theme_pref"),
+           let pref = AppThemePreference(rawValue: saved) {
+            self.preference = pref
+        }
+    }
+    
+    public var colorScheme: ColorScheme? {
+        switch preference {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
+}
+
 public struct NikonTheme {
     // MARK: - 核心色彩体系 (对齐网页版 CSS 根变量)
     public static let bgPure          = Color.white                                           // #FFFFFF 纯净白底
@@ -15,6 +46,7 @@ public struct NikonTheme {
     public static let surfaceCard     = Color.white                                           // #FFFFFF 纯白卡片
     public static let borderDim       = Color(red: 0.886, green: 0.910, blue: 0.941)          // #E2E8F0 浅灰边框
     public static let borderLight     = Color(red: 0.945, green: 0.961, blue: 0.976)          // #F1F5F9 极浅边框
+    public static let borderGray      = Color(red: 0.886, green: 0.910, blue: 0.941)          // 兼容历史命名
     
     // 品牌科技蔚蓝 (#007AFF)
     public static let accentBlue      = Color(red: 0.0, green: 0.478, blue: 1.0)              // #007AFF 科技蔚蓝
