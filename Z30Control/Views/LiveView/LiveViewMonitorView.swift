@@ -193,10 +193,8 @@ public struct LiveViewMonitorView: View {
                     compositionGridOverlay
                 }
                 
-                // 电子水平仪
-                if !isCleanScreen {
-                    horizonLevelIndicator
-                }
+                // v1.0.23：电子水平仪不要了——绿色横线+圆圈会压在“未检测到
+                // 相机信号”文字上。中间这个位置留空，以后放分类滤镜。
                 
                 // 触控对焦点与绿框
                 if let pos = touchFocusPosition {
@@ -1072,15 +1070,7 @@ public struct LiveViewMonitorView: View {
         .transition(.opacity)
     }
     
-    // MARK: - 水平仪与辅助线
-    private var horizonLevelIndicator: some View {
-        HStack(spacing: 8) {
-            Rectangle().fill(NikonTheme.readyGreen).frame(width: 40, height: 1.5)
-            Circle().stroke(NikonTheme.readyGreen, lineWidth: 1.5).frame(width: 6, height: 6)
-            Rectangle().fill(NikonTheme.readyGreen).frame(width: 40, height: 1.5)
-        }
-    }
-    
+    // MARK: - 辅助线
     private var compositionGridOverlay: some View {
         GeometryReader { geo in
             Path { path in
