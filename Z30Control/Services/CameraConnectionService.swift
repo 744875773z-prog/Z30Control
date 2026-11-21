@@ -64,9 +64,11 @@ public final class CameraConnectionService: ObservableObject, PtpIpClientDelegat
             self.targetIP = "192.168.1.1"
             self.statusMessage = "已设为【USB-C 有线】模式 (192.168.1.1)"
         case .cameraAP:
-            // 相机作为独立 Wi-Fi 热点时，尼康默认网关 IP 永远是 192.168.0.1
-            self.targetIP = "192.168.0.1"
-            self.statusMessage = "已设为【相机热点】模式 (192.168.0.1)"
+            // v1.0.13：相机热点（AP 模式）下相机 IP 固定是 192.168.1.1
+            // （尼康 WTU 帮助原话）。之前这里写 192.168.0.1 是错的，
+            // 向导里选相机热点点“开始连接”会连错地址。
+            self.targetIP = "192.168.1.1"
+            self.statusMessage = "已设为【相机热点】模式 (192.168.1.1)"
         case .wifiLocal:
             self.statusMessage = "正在检索局域网相机..."
             discoverCamerasInLAN()
