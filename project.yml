@@ -13,12 +13,10 @@ targets:
           - "Resources/BuiltinLUTs"
       - path: Z30Control/Resources/BuiltinLUTs
         buildPhase: resources
-    # 注意：这里只写 path，不要加 properties——一旦写了 properties，
-    # XcodeGen 就会改成生成一份只有默认值+properties 的 Info.plist，
-    # 把源文件里的局域网/相册等权限描述全丢掉（v1.0.3 构建验证时发现的）。
-    # UILaunchStoryboardName 源 plist 里本来就有，不用再写一遍。
-    info:
-      path: Z30Control/Info.plist
+    # 注意：这里不要写 info: 块——一旦写了，XcodeGen 每次 generate 都会
+    # 用 properties+默认值重写 Z30Control/Info.plist，源文件里的权限描述
+    # 和版本号全被丢掉（已实测两轮构建）。手写 Info.plist 是唯一真相来源，
+    # 靠下面 settings 里的 INFOPLIST_FILE 引用它。
     scheme:
       build:
         targets:
