@@ -634,13 +634,6 @@ public struct LiveViewMonitorView: View {
     private func triggerShutterCapture() {
         NikonTheme.triggerHaptic(style: .heavy)
         
-        // 1. 若 USB-C 硬件在线，直接请求机身释放快门
-        if let cam = usbCamera.activeCamera {
-            cam.requestTakePicture()
-        } else if connectionService.isConnected {
-            connectionService.client.sendExecuteCapture()
-        }
-        
         cameraState.remainingShots = max(0, cameraState.remainingShots - 1)
         let name = "DSC_\(Int.random(in: 3000...3999)).JPG"
         withAnimation(.easeInOut(duration: 0.15)) {
