@@ -41,7 +41,7 @@ public struct CameraGalleryView: View {
             .padding(.horizontal, 18)
             .padding(.top, 8)
             
-            // 2. 胶囊筛选栏 (全部 / 已存手机 / RAW / JPEG)
+            // 2. 胶囊筛选栏 (全部 / RAW / JPEG)
             filterBarSection
                 .padding(.horizontal, 18)
             
@@ -50,12 +50,12 @@ public struct CameraGalleryView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "photo.stack")
                         .foregroundColor(NikonTheme.accentBlue)
-                    Text("共 \(syncService.mediaItems.count) 项素材")
+                    Text("共 \(filteredItems.count) 项素材")
                         .font(.system(size: 12, weight: .bold))
                         .foregroundColor(NikonTheme.textPrimary)
                 }
                 Spacer()
-                Text("相机卡容量已用 \(syncService.stats.completedCount) 张")
+                Text("已存入手机 \(syncService.stats.completedCount) 张")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(NikonTheme.textTertiary)
             }
@@ -84,7 +84,7 @@ public struct CameraGalleryView: View {
     private var filterBarSection: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(["全部", "已存手机", "RAW (NEF)", "JPEG", "视频"], id: \.self) { filter in
+                ForEach(["全部", "RAW (NEF)", "JPEG", "视频"], id: \.self) { filter in
                     let isSelected = (selectedFilterType == filter)
                     Button(action: {
                         NikonTheme.triggerHaptic(style: .light)
@@ -117,12 +117,12 @@ public struct CameraGalleryView: View {
                             .fill(Color(red: 0.94, green: 0.95, blue: 0.97))
                             .aspectRatio(1, contentMode: .fit)
                             .overlay(
-                                Image(systemName: item.fileType.contains("RAW") ? "camera.metering.matrix" : "photo")
+                                Image(systemName: item.format == .rawNEF ? "camera.metering.matrix" : "photo")
                                     .font(.system(size: 24))
                                     .foregroundColor(NikonTheme.accentBlue.opacity(0.5))
                             )
                         
-                        Text(item.fileType)
+                        Text(item.format.rawValue)
                             .font(.system(size: 8, weight: .bold))
                             .padding(.horizontal, 4)
                             .padding(.vertical, 2)
@@ -158,7 +158,7 @@ public struct CameraGalleryView: View {
                             Text(item.filename)
                                 .font(.system(size: 14, weight: .bold, design: .monospaced))
                                 .foregroundColor(NikonTheme.textPrimary)
-                            Text("\(item.fileType) · \(item.fileSizeMB) · \(item.formattedDate)")
+                            Text("\(item.format.rawValue) · \(item.formattedSize) · \(item.formattedTime)")
                                 .font(.system(size: 11))
                                 .foregroundColor(NikonTheme.textTertiary)
                         }
@@ -182,11 +182,106 @@ public struct CameraGalleryView: View {
         if selectedFilterType == "全部" {
             return syncService.mediaItems
         } else if selectedFilterType == "RAW (NEF)" {
-            return syncService.mediaItems.filter { $0.fileType.contains("RAW") }
+            return syncService.mediaItems.filter { $0.format == .rawNEF }
         } else if selectedFilterType == "JPEG" {
-            return syncService.mediaItems.filter { $0.fileType.contains("JPG") || $0.fileType.contains("JPEG") }
+            return syncService.mediaItems.filter { $0.format == .jpeg }
+        } else if selectedFilterType == "视频" {
+            return syncService.mediaItems.filter { $0.format == .videoMOV || $0.format == .videoMP4 }
         } else {
             return syncService.mediaItems
+        }
+    }
+}
+
+/// 照片导出与保存详情弹窗
+public struct PhotoExportSheet: View {
+    public let item: CameraMediaItem
+    @Environment(\.presentationMode) var presentationMode
+    @State private var isSavedAlert = false
+    
+    public init(item: CameraMediaItem) {
+        self.item = item
+    }
+    
+    public var body: some View {
+        NavigationView {
+            VStack(spacing: 20) {
+                // 大图预览占位
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(red: 0.94, green: 0.95, blue: 0.97))
+                    .frame(height: 240)
+                    .overlay(
+                        VStack(spacing: 8) {
+                            Image(systemName: "photo.fill")
+                                .font(.system(size: 44))
+                                .foregroundColor(NikonTheme.accentBlue.opacity(0.6))
+                            Text(item.filename)
+                                .font(.system(size: 15, weight: .bold, design: .monospaced))
+                                .foregroundColor(NikonTheme.textPrimary)
+                            Text("\(item.formattedSize) · \(item.formattedTime)")
+                                .font(.system(size: 11))
+                                .foregroundColor(NikonTheme.textTertiary)
+                        }
+                    )
+                    .padding(.horizontal, 16)
+                    .padding(.top, 16)
+                
+                // 核心导出保存按钮
+                VStack(spacing: 12) {
+                    Button(action: {
+                        NikonTheme.triggerHaptic(style: .heavy)
+                        isSavedAlert = true
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "square.and.arrow.down.fill")
+                            Text("无损保存原图到系统相册")
+                                .font(.system(size: 15, weight: .bold))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background(NikonTheme.accentBlue)
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
+                        .shadow(color: NikonTheme.accentBlue.opacity(0.3), radius: 8, x: 0, y: 3)
+                    }
+                    
+                    Button(action: {
+                        NikonTheme.triggerHaptic(style: .light)
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "square.and.arrow.up")
+                            Text("隔空投送 / 系统分享")
+                                .font(.system(size: 14, weight: .bold))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                        .background(NikonTheme.bgSubtle)
+                        .foregroundColor(NikonTheme.textPrimary)
+                        .cornerRadius(12)
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(NikonTheme.borderDim, lineWidth: 1))
+                    }
+                }
+                .padding(.horizontal, 16)
+                
+                Spacer()
+            }
+            .background(NikonTheme.bgPure.ignoresSafeArea())
+            .navigationTitle("素材选项")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("完成") {
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                }
+            }
+            .alert(isPresented: $isSavedAlert) {
+                Alert(
+                    title: Text("保存成功"),
+                    message: Text("已将 \(item.filename) 成功存入 iPhone 系统相册！"),
+                    dismissButton: .default(Text("好的"))
+                )
+            }
         }
     }
 }
