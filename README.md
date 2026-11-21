@@ -13,7 +13,7 @@
 5. **连接后发的 SetDevicePropValue(0xD1A2) 是畸形包**：规范要求只带属性码、值走数据阶段，之前把值当第 2 个参数发。已删除该调用；`setDevicePropValue` 改为规范的数据阶段发送。
 6. **指令通道串行执行器**：取景循环、图库拉取、速传下载现排队走同一事务，避免互相抢响应报文。
 7. **OpenSession/StartLiveView 现校验响应码**，被拒不再谎报“已连接”。
-8. **构建用的 Info.plist 是生成的假 plist**：`project.yml` 里 `info.properties` 一写，XcodeGen 就改成生成默认 plist，源文件里的局域网/相册/相机权限描述全丢了（版本号也一直显示 1.0）。已去掉 `properties`、只留 `path`，工作流打包后会校验三个权限描述缺一不可，缺了就让构建失败。
+8. **构建用的 Info.plist 是生成的假 plist**：`project.yml` 里 `info.properties` 一写，XcodeGen 就改成生成默认 plist，源文件里的局域网/相册/相机权限描述全丢了（版本号也一直显示 1.0）。已去掉 `properties`、只留 `path`。注意：这次登录的 token 没有 `workflow` 权限，改不了工作流文件，所以打包校验那一步没加上，改完后需手动验包里的 Info.plist。
 
 > 提醒：`Tests/test_ptpip_protocol.py` 的 14 项测试是纯 Python socket 测试，对着本地模拟器跑的，从不执行 Swift 代码——它通过不等于 App 能连真机。本次修复的协议流程已用等价 Python 客户端对模拟器复核（见 `Tests/test_fixed_flow.py`），真机仍需实测。
 
