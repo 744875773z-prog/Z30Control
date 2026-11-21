@@ -299,19 +299,32 @@ public final class PtpIpClient {
     ///   - x: 归一化横坐标 (0.0 ~ 1.0)
     ///   - y: 归一化纵坐标 (0.0 ~ 1.0)
     public func setTouchFocus(x: Float, y: Float) {
-        guard isSessionOpen else { return }
-        
         // 将归一化坐标转为尼康传感器内部对焦平面绝对坐标 (通常范围 0 ~ 10000)
         let focusX = UInt32(max(0, min(1.0, x)) * 10000)
         let focusY = UInt32(max(0, min(1.0, y)) * 10000)
-        
-        // 发送尼康专有 AF 对焦驱动操作码 (0x90C1)
+        driveAutofocus(x: focusX, y: focusY, completion: nil)
+    }
+
+    // MARK: - AF-ON：自动对焦驱动（带回执）
+    /// AfDrive (0x90C1，见 Wireshark packet-ptpip.h 的 PTP_OC_NIKON_AfDrive）
+    /// 驱动自动对焦，参数为对焦平面坐标（0~10000）。AF-ON 对画面中心对焦：
+    /// x=y=5000。回执 0x2001=OK；相机在手动对焦或未取景时可能拒答。
+    public func driveAutofocusAtCenter(completion: ((Bool, UInt16?) -> Void)? = nil) {
+        driveAutofocus(x: 5000, y: 5000, completion: completion)
+    }
+
+    public func driveAutofocus(x: UInt32, y: UInt32, completion: ((Bool, UInt16?) -> Void)? = nil) {
+        guard isSessionOpen else { completion?(false, nil); return }
         let packet = PtpIpPacket.makeCmdRequest(
             opCode: PtpOperationCode.nikonAfDrive.rawValue,
             transactionId: nextTransactionId(),
-            params: [focusX, focusY]
+            params: [x, y]
         )
-        sendCmdPacket(packet, completion: nil)
+        sendCmdPacket(packet) { [weak self] resp in
+            guard let self = self else { completion?(false, nil); return }
+            let code = self.cmdResponseCode(resp)
+            completion?(code == PtpResponseCode.ok.rawValue, code)
+        }
     }
     
     // MARK: - 按 PTP 规范设置设备属性（值走数据阶段发送）

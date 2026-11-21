@@ -36,6 +36,7 @@ private enum NikonPTPOpCode: UInt16 {
     case nikonStartLiveView  = 0x9201 // 开启实时取景
     case nikonEndLiveView    = 0x9202 // 结束实时取景
     case nikonGetLiveViewImg = 0x9203 // 拉取实时取景帧
+    case afDrive             = 0x90C1 // 自动对焦驱动（尼康厂商操作码）
 }
 
 // MARK: - 尼康 PTP 事件码
@@ -1279,6 +1280,40 @@ public final class UsbCameraManager: NSObject, ObservableObject,
                 self?.setDiagnostic(String(format: "设置属性被拒 0x%04X", respCode!))
             }
             completion(ok)
+        }
+    }
+
+    // MARK: - AF-ON：中心点自动对焦（带回执）
+    /// AfDrive (0x90C1，见 Wireshark packet-ptpip.h：PTP_OC_NIKON_AfDrive）
+    /// 驱动自动对焦，参数为对焦平面坐标（0~10000）。AF-ON 对画面中心对焦：
+    /// x=y=5000。回执 0x2001=OK；相机在手动对焦或未取景时可能拒答。
+    /// 发命令前先停取景帧拉取（和 setCameraProp 一样，不然命令要排在 20fps
+    /// 的取景帧后面等很久）。
+    public func driveAutofocusAtCenter(completion: ((Bool) -> Void)? = nil) {
+        guard let camera = activeCamera, isUsbConnected else { completion?(false); return }
+        pauseLiveViewFetching()
+        let cmd = buildPTPCommandPacket(opCode: NikonPTPOpCode.afDrive.rawValue,
+                                        params: [5000, 5000])
+        camera.requestSendPTPCommand(cmd, outData: nil) { [weak self] (_, responseData, error) in
+            // 恢复取景（在主线程，因为要重建 Timer）
+            DispatchQueue.main.async { [weak self] in self?.resumeLiveViewFetching() }
+            guard error == nil else {
+                self?.setDiagnostic("对焦出错：\(error!.localizedDescription)")
+                completion?(false)
+                return
+            }
+            var respCode: UInt16? = nil
+            if responseData.count >= 8 {
+                let t = UInt16(responseData[4]) | (UInt16(responseData[5]) << 8)
+                if t == 0x0003 {
+                    respCode = UInt16(responseData[6]) | (UInt16(responseData[7]) << 8)
+                }
+            }
+            let ok = respCode == nil || respCode == 0x2001
+            if !ok {
+                self?.setDiagnostic(String(format: "对焦被拒 0x%04X", respCode!))
+            }
+            completion?(ok)
         }
     }
 

@@ -26,6 +26,10 @@ public struct LiveViewMonitorView: View {
     @State private var touchFocusPosition: CGPoint? = nil
     @State private var isFocusPulsing = false
     @State private var isAfOnActive = false
+    // v1.0.16：AF-ON 对焦失败时按钮红闪 1.5s（绿=对焦中/已接受，红=相机拒答或没回音）。
+    @State private var afFailed = false
+    // 区分新旧两次对焦请求：回执和 5 秒超时只对最新的一次生效。
+    @State private var afRequestToken = UUID()
     @State private var instantPreviewName: String? = nil
     // v1.0.4：回显浮层的标题/副标题（之前写死“拍摄完成/已安全落盘”，快门本身是假的）
     @State private var previewTitle = "拍摄完成 · 即时预览 (2s)"
@@ -577,21 +581,18 @@ public struct LiveViewMonitorView: View {
                         
                         Spacer()
                         
-                        // AF-ON 椭圆对焦胶囊按钮
+                        // AF-ON 椭圆对焦胶囊按钮（v1.0.16：真的发 AfDrive 对焦，
+                        // 绿=对焦中，红闪=相机拒答或没回音）
                         Button(action: {
-                            NikonTheme.triggerHaptic(style: .heavy)
-                            isAfOnActive = true
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                                isAfOnActive = false
-                            }
+                            triggerAutofocus()
                         }) {
                             Text("AF-ON")
                                 .font(.system(size: 13, weight: .black))
-                                .foregroundColor(isAfOnActive ? .black : NikonTheme.nikonYellow)
+                                .foregroundColor(isAfOnActive ? .black : (afFailed ? .white : NikonTheme.nikonYellow))
                                 .frame(width: 76, height: 38)
-                                .background(isAfOnActive ? NikonTheme.readyGreen : Color.black.opacity(0.5))
+                                .background(isAfOnActive ? NikonTheme.readyGreen : (afFailed ? NikonTheme.tallyRed : Color.black.opacity(0.5)))
                                 .cornerRadius(19)
-                                .overlay(RoundedRectangle(cornerRadius: 19).stroke(isAfOnActive ? NikonTheme.readyGreen : NikonTheme.nikonYellow, lineWidth: 2))
+                                .overlay(RoundedRectangle(cornerRadius: 19).stroke(isAfOnActive ? NikonTheme.readyGreen : (afFailed ? NikonTheme.tallyRed : NikonTheme.nikonYellow), lineWidth: 2))
                         }
                         
                         // 大拇指主快门环 (半透明设计，零遮挡)
@@ -945,21 +946,17 @@ public struct LiveViewMonitorView: View {
             
             Spacer()
             
-            // AF-ON 按钮
+            // AF-ON 按钮（v1.0.16：真的发 AfDrive 对焦，绿=对焦中，红闪=相机拒答或没回音）
             Button(action: {
-                NikonTheme.triggerHaptic(style: .heavy)
-                isAfOnActive = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                    isAfOnActive = false
-                }
+                triggerAutofocus()
             }) {
                 Text("AF-ON")
                     .font(.system(size: 13, weight: .black))
-                    .foregroundColor(isAfOnActive ? .black : NikonTheme.nikonYellow)
+                    .foregroundColor(isAfOnActive ? .black : (afFailed ? .white : NikonTheme.nikonYellow))
                     .frame(width: 78, height: 42)
-                    .background(isAfOnActive ? NikonTheme.readyGreen : Color.black.opacity(0.6))
+                    .background(isAfOnActive ? NikonTheme.readyGreen : (afFailed ? NikonTheme.tallyRed : Color.black.opacity(0.6)))
                     .cornerRadius(21)
-                    .overlay(RoundedRectangle(cornerRadius: 21).stroke(isAfOnActive ? NikonTheme.readyGreen : NikonTheme.nikonYellow, lineWidth: 2))
+                    .overlay(RoundedRectangle(cornerRadius: 21).stroke(isAfOnActive ? NikonTheme.readyGreen : (afFailed ? NikonTheme.tallyRed : NikonTheme.nikonYellow), lineWidth: 2))
             }
             
             // 主快门按钮
@@ -1094,6 +1091,47 @@ public struct LiveViewMonitorView: View {
     // 还顺手把剩余张数减 1。相机根本没拍。
     // 现在：发拍摄命令；成功只代表“已触发”，成片随后经 didAdd 下载回来，
     // 由 onChange(lastCapturedFilename) 回显真图。失败则报原因。
+    // MARK: - v1.0.16：AF-ON 真对焦（之前是假的，只亮 0.6 秒绿灯）
+    /// 按下对画面中心发 AfDrive (0x90C1)。绿=对焦中（相机回 0x2001 后熄灭），
+    /// 红闪=相机拒答、没回音或根本没连相机。5 秒没回执也算失败——Wi-Fi 那条
+    /// 路发包失败时 completion 可能不回调，不能让绿灯一直亮着。
+    private func triggerAutofocus() {
+        NikonTheme.triggerHaptic(style: .heavy)
+        guard isDeviceConnected else {
+            afFailed = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.afFailed = false }
+            return
+        }
+        isAfOnActive = true
+        afFailed = false
+        let token = UUID()
+        afRequestToken = token
+        let done: (Bool) -> Void = { [weak self] ok in
+            DispatchQueue.main.async {
+                guard let self = self, self.afRequestToken == token else { return }
+                self.isAfOnActive = false
+                if !ok { self.flashAfFailed() }
+            }
+        }
+        if usbCamera.isUsbConnected {
+            usbCamera.driveAutofocusAtCenter(completion: done)
+        } else if connectionService.isConnected {
+            connectionService.client.driveAutofocusAtCenter { ok, _ in done(ok) }
+        } else {
+            done(false)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            guard let self = self, self.afRequestToken == token, self.isAfOnActive else { return }
+            self.isAfOnActive = false
+            self.flashAfFailed()
+        }
+    }
+
+    private func flashAfFailed() {
+        afFailed = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.afFailed = false }
+    }
+
     private func triggerShutterCapture() {
         guard !isCapturing else { return }
         NikonTheme.triggerHaptic(style: .heavy)
