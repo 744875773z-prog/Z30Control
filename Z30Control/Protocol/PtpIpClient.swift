@@ -71,6 +71,8 @@ public final class PtpIpClient {
     
     // 重连机制
     private var reconnectAttempt = 0
+    // v1.0.10：握手超时用的轮次号，每次 connect() 加一，旧轮次的超时器不再生效
+    private var connectionAttemptID: UInt64 = 0
     private var currentHost = "192.168.0.1"
     private var currentPort: UInt16 = 15740
     private var intentionalDisconnect = false
@@ -126,7 +128,18 @@ public final class PtpIpClient {
         self.cmdJobQueue.removeAll()
         self.cmdJobRunning = false
         self.status = .connecting
-        
+        // v1.0.10：先断掉上一轮残留的连接。相机同时只接受一个 PTP/IP 会话，
+        // 连续点两次连接会留下两个半会话，相机可能直接不回握手。
+        cmdConnection?.cancel()
+        eventConnection?.cancel()
+        cmdConnection = nil
+        eventConnection = nil
+        // v1.0.10：握手超时。之前这里没有任何超时：相机 TCP 端口通着
+        // （局域网扫描能找到它）但不回 InitCommandAck 时，readNextCmdPacket
+        // 永远等下去，界面一直显示“正在连接...”没有任何报错和重试。
+        connectionAttemptID += 1
+        let attemptID = connectionAttemptID
+
         let endpointHost = NWEndpoint.Host(host)
         let endpointPort = NWEndpoint.Port(rawValue: port) ?? 15740
         
@@ -153,6 +166,23 @@ public final class PtpIpClient {
             }
         }
         cmdConnection?.start(queue: workQueue)
+
+        // v1.0.10：8 秒还没连上就直接报失败（不走自动重连，让用户看到原因）。
+        // .connecting = TCP 还没通；.handshaking = TCP 通了但相机不回 PTP/IP 握手。
+        workQueue.asyncAfter(deadline: .now() + 8) { [weak self] in
+            guard let self = self else { return }
+            guard self.connectionAttemptID == attemptID else { return } // 已是新一轮连接
+            switch self.status {
+            case .connecting:
+                self.disconnect(isIntentional: true)
+                self.status = .failed("连接超时：连不上 \(host):15740。请确认手机和相机在同一 Wi-Fi，且相机 Wi-Fi 已打开。")
+            case .handshaking:
+                self.disconnect(isIntentional: true)
+                self.status = .failed("握手超时：已连上 \(host):15740，但相机没有回 PTP/IP 握手。请确认相机 Wi-Fi 处于「连接到计算机」模式（不是连接智能设备），或重启相机后重试。")
+            default:
+                break
+            }
+        }
     }
     
     // MARK: - 异常断线与自动指数退避重连
