@@ -209,6 +209,58 @@ public final class MediaSyncService: ObservableObject {
             }
         }
     }
+
+    /// v1.0.18：拍完照直接进图库——速传删了，成片不再先下载再进速传，
+    /// 而是查到新文件就直接插进图库列表最前面（文件名去重，重复的不插）。
+    /// 插进来的项目和 ICC 目录列出来的一样用文件名哈希做 id，目录刷新
+    /// 后两者是同一张，不会重复；缩略图靠句柄（有就直接取，没句柄就等映射表）。
+    public func insertCapturedItem(filename: String, sizeBytes: UInt64, ptpHandle: UInt32? = nil, usbFilename: String? = nil) {
+        let ext = (filename as NSString).pathExtension.lowercased()
+        let item = CameraMediaItem(
+            id: UInt32(truncatingIfNeeded: filename.hashValue),
+            filename: filename,
+            sizeBytes: sizeBytes,
+            format: Self.format(for: ext),
+            captureDate: Date(),
+            usbFilename: usbFilename ?? filename,
+            ptpHandle: ptpHandle
+        )
+        DispatchQueue.main.async {
+            guard !self.fetchedItems.contains(where: { $0.filename == filename }) else { return }
+            self.fetchedItems.insert(item, at: 0)
+            self.mediaItems.insert(item, at: 0)
+            self.stats.indexedTotalFiles = self.fetchedItems.count
+        }
+    }
+
+    /// v1.0.18：批量保存（图库多选）。一张一张串行下，防 PTP 拥塞；
+    /// 每下一张调一次 progress（已下张数/总数），最后调 completion（成功张数/总数）。
+    public func saveItems(_ items: [CameraMediaItem], progress: @escaping (Int, Int) -> Void, completion: @escaping (Int, Int) -> Void) {
+        var succeeded = 0
+        func next(_ index: Int) {
+            guard index < items.count else { completion(succeeded, items.count); return }
+            progress(index + 1, items.count)
+            downloadAndSaveToPhotos(item: items[index]) { ok in
+                if ok { succeeded += 1 }
+                next(index + 1)
+            }
+        }
+        next(0)
+    }
+
+    /// v1.0.18：批量取原图数据（图库多选分享）。串行下，下不到的跳过，
+    /// 最后一起调 completion。
+    public func downloadItemsData(_ items: [CameraMediaItem], completion: @escaping ([(filename: String, data: Data)]) -> Void) {
+        var results: [(filename: String, data: Data)] = []
+        func next(_ index: Int) {
+            guard index < items.count else { completion(results); return }
+            downloadOriginalData(item: items[index]) { data in
+                if let data = data { results.append((filename: items[index].filename, data: data)) }
+                next(index + 1)
+            }
+        }
+        next(0)
+    }
     
     /// JPEG/视频存入系统相册；NEF 无法直接写入相册，存到 App 文稿目录
     private func saveDataToPhotosOrFiles(_ data: Data, filename: String, completion: @escaping (Bool) -> Void) {

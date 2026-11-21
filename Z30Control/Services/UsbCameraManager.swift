@@ -55,10 +55,9 @@ public final class UsbCameraManager: NSObject, ObservableObject,
     // MARK: - Published 状态
     @Published public var isUsbConnected: Bool = false
     @Published public var connectedDeviceName: String = ""
-    @Published public var lastCapturedPhoto: UIImage? = nil
-    @Published public var lastCapturedFilename: String = ""
-    @Published public var lastCapturedExif: String = ""
-    @Published public var sessionCapturedPhotos: [CapturedPhotoItem] = []
+    // v1.0.18：速传删了，不再下载成片进速传列表。只记“本次拍摄”的文件名，
+    // 取景页的拍摄条按文件名从图库里取对应项目显示（缩略图走 GetThumb）。
+    @Published public var sessionCapturedFilenames: Set<String> = []
 
     // Live View 状态
     @Published public var isLiveViewStreaming: Bool = false
@@ -102,21 +101,10 @@ public final class UsbCameraManager: NSObject, ObservableObject,
     // v1.0.6：拍前快照是否成功读到（失败时不做复查，免得把整张卡都当成新照片）
     private var preCaptureSnapshotOK = false
     private var captureCheckWorkItem: DispatchWorkItem?
-    // v1.0.6：didAdd 触发的下载（走速传），失败重试一次；按文件名记，防止重复重试
-    private var didAddDownloadNames: Set<String> = []
-    private var retriedDownloads: Set<String> = []
 
     // 属性读取队列 (避免 USB 拥塞)
     private let ptpQueue = DispatchQueue(label: "com.z30control.ptp.serial", qos: .userInitiated)
     private var isPropFetching: Bool = false
-
-    public struct CapturedPhotoItem: Identifiable {
-        public let id = UUID()
-        public let filename: String
-        public let image: UIImage?
-        public let date: Date
-        public let sizeString: String
-    }
 
     private override init() {
         super.init()
@@ -258,46 +246,20 @@ public final class UsbCameraManager: NSObject, ObservableObject,
                     all.insert(f, at: 0)
                 }
                 self.usbMediaFiles = all
+                // v1.0.18：速传删了，不再自动下载。成片直接进图库列表
+                // （下面重建图库），取景页的拍摄条按文件名认它。
+                for f in newFiles { if let n = f.name { self.sessionCapturedFilenames.insert(n) } }
                 // v1.0.14：新照片进了目录，图库列表也要跟着重建，否则图库页
                 // 还是旧的那份，看不到刚拍的。
                 MediaSyncService.shared.refreshFromUSB()
+                self.refreshStorageInfo()
             }
-        }
-        // v1.0.17：先停取景帧再下片。取景 20fps 抢 PTP 通道时 ICC 下载
-        // 会直接报 -9934（DownloadFailed）；停帧后下完再恢复（见
-        // didDownloadPhoto 的恢复逻辑）。didAdd 可能不在主线程，Timer
-        // 只能在主线程动，用 main.sync 保证停帧先于下载。
-        if Thread.isMainThread { pauseLiveViewFetching() } else { DispatchQueue.main.sync { pauseLiveViewFetching() } }
-        for item in items {
-            guard let file = item as? ICCameraFile else { continue }
-            print("[UsbCameraManager] 新拍摄照片: \(file.name ?? "未命名")")
-            // v1.0.6：记下这是 didAdd 触发的下载，失败时才走速传重试（图库保存的下载不重试进速传）
-            if let name = file.name { didAddDownloadNames.insert(name) }
-            let downloadOptions: [ICDownloadOption: Any] = [:]
-            camera.requestDownloadFile(
-                file,
-                options: downloadOptions,
-                downloadDelegate: self,
-                didDownloadSelector: #selector(didDownloadPhoto(_:error:options:contextInfo:)),
-                contextInfo: nil
-            )
         }
     }
 
     public func cameraDevice(_ camera: ICCameraDevice, didRemove items: [ICCameraItem]) {}
     public func cameraDevice(_ camera: ICCameraDevice, didRenameItems items: [ICCameraItem]) {}
     public func cameraDeviceDidChangeCapability(_ camera: ICCameraDevice) {}
-
-    public func cameraDevice(_ camera: ICCameraDevice, didReceiveThumbnail thumbnail: CGImage?,
-                              for item: ICCameraItem, error: (any Error)?) {
-        if let cgImg = thumbnail {
-            let uiImg = UIImage(cgImage: cgImg)
-            DispatchQueue.main.async { [weak self] in
-                self?.lastCapturedPhoto = uiImg
-                self?.lastCapturedFilename = item.name ?? "NEW_PHOTO.JPG"
-            }
-        }
-    }
 
     public func cameraDevice(_ camera: ICCameraDevice, didReceiveMetadata metadata: [AnyHashable: Any]?,
                               for item: ICCameraItem, error: (any Error)?) {}
@@ -311,70 +273,38 @@ public final class UsbCameraManager: NSObject, ObservableObject,
     public func cameraDeviceDidRemoveAccessRestriction(_ device: ICDevice) {}
 
     // MARK: - 下载完成 Selector 回调
+    // v1.0.18：速传删了，这条回调只服务图库“保存原图”/“分享”的下载。
+    // 成功就把原数据交给等着的 completion；失败也一定给答复（不再重试、
+    // 不再进速传），然后恢复取景。
     @objc private func didDownloadPhoto(_ file: ICCameraFile, error: Error?,
                                          options: [String: Any],
                                          contextInfo: UnsafeMutableRawPointer?) {
         if let error = error {
             print("[UsbCameraManager] 照片下载出错: \(error)")
-            // v1.0.4：图库“保存原图”等着的下载也要给个失败答复，别让它一直转
             if let name = file.name, let cb = usbDownloadCompletions.removeValue(forKey: name) {
                 cb(nil)
             }
-            // v1.0.6：下载失败以前只打印日志，速传里什么都没有，用户不知道卡在哪。
-            // 现在写进诊断，并对 didAdd 触发的下载 1.5s 后重试一次（相机刚写完文件时可能还没准备好）。
-            if let name = file.name {
-                if didAddDownloadNames.contains(name), !retriedDownloads.contains(name) {
-                    retriedDownloads.insert(name)
-                    didAddDownloadNames.remove(name)
-                    setDiagnostic("速传下载失败：\(error.localizedDescription)，1.5s 后重试")
-                    // v1.0.17：第一次失败先别恢复取景——1.5s 后的重试还要用安静通道，
-                    // 恢复由重试那次下载的完成回调负责。
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-                        // v1.0.14：ICC 重试也可能失败（目录里根本没这张），
-                        // 那就走 PTP 直接按文件名在卡里找，找到就下原图。
-                        // v1.0.17：重试不再重复暂停——didAdd 那次暂停还没恢复。
-                        self?.downloadUSBFile(named: name, pauseFrames: false) { [weak self] data in
-                            if data == nil { self?.rescanCardForNewPhotos() }
-                        }
-                    }
-                } else {
-                    didAddDownloadNames.remove(name)
-                    setDiagnostic("速传下载失败：\(error.localizedDescription)")
-                    // v1.0.17：重试也失败了（或不是 didAdd 的下载），恢复取景。
-                    DispatchQueue.main.async { [weak self] in self?.resumeLiveViewFetching() }
-                }
-            } else {
-                DispatchQueue.main.async { [weak self] in self?.resumeLiveViewFetching() }
-            }
+            setDiagnostic("下载失败：\(error.localizedDescription)")
+            DispatchQueue.main.async { [weak self] in self?.resumeLiveViewFetching() }
             return
         }
         let savedPath = (NSTemporaryDirectory() as NSString).appendingPathComponent(file.name ?? "capture.jpg")
-        let loadedImage = UIImage(contentsOfFile: savedPath)
         // v1.0.4：图库保存原图要的是文件数据（NEF 不能转 UIImage，得走原数据）
         let fileData = try? Data(contentsOf: URL(fileURLWithPath: savedPath))
         if let name = file.name, let cb = usbDownloadCompletions.removeValue(forKey: name) {
             cb(fileData)
         }
-
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            let name = file.name ?? "DSC_NEW.JPG"
-            didAddDownloadNames.remove(name)
-            // v1.0.6：成片进速传的逻辑抽成 addCapturedPhoto，PTP 兜底下载也走同一条路
-            self.addCapturedPhoto(image: loadedImage, filename: name, sizeBytes: Int(file.fileSize))
-            // v1.0.6：拍完下载回来，恢复取景帧拉取（capturePhoto 里暂停过）
-            self.resumeLiveViewFetching()
-        }
+        DispatchQueue.main.async { [weak self] in self?.resumeLiveViewFetching() }
     }
 
     // MARK: - v1.0.4：图库“保存原图”（USB）
     /// 按文件名从卡里下载原文件，回调给原数据（NEF 也能走这条路）。
-    /// v1.0.17：默认先停取景帧再下（同 didAdd 的 -9934 教训）；pauseFrames=false
-    /// 供 didAdd 的重试用——那次暂停还没恢复，重复暂停会打乱计数。
-    public func downloadUSBFile(named filename: String, pauseFrames: Bool = true, completion: @escaping (Data?) -> Void) {
+    /// v1.0.17：下载前先停取景帧（取景 20fps 抢 PTP 通道时 ICC 下载会报 -9934），
+    /// 下完在 didDownloadPhoto 里恢复。
+    public func downloadUSBFile(named filename: String, completion: @escaping (Data?) -> Void) {
         guard let camera = activeCamera, isUsbConnected else { completion(nil); return }
         guard let file = usbMediaFiles.first(where: { $0.name == filename }) else { completion(nil); return }
-        if pauseFrames { pauseLiveViewFetching() }
+        pauseLiveViewFetching()
         usbDownloadCompletions[filename] = completion
         camera.requestDownloadFile(
             file,
@@ -383,24 +313,6 @@ public final class UsbCameraManager: NSObject, ObservableObject,
             didDownloadSelector: #selector(didDownloadPhoto(_:error:options:contextInfo:)),
             contextInfo: nil
         )
-    }
-
-    // MARK: - v1.0.6：速传兜底（App 快门拍完，成片必须进速传）
-
-    /// 把一张真实成片放进速传列表（didAdd 下载和 PTP 兜底下载共用）。
-    /// 拍完一张，卡的剩余张数变了，顺手重新读一次存储信息。
-    private func addCapturedPhoto(image: UIImage?, filename: String, sizeBytes: Int) {
-        let sizeStr = String(format: "%.1f MB", Double(sizeBytes) / 1024.0 / 1024.0)
-        if let img = image { lastCapturedPhoto = img }
-        lastCapturedFilename = filename
-        lastCapturedExif = "原片传输 · \(sizeStr)"
-        let item = CapturedPhotoItem(filename: filename, image: image, date: Date(), sizeString: sizeStr)
-        sessionCapturedPhotos.insert(item, at: 0)
-        NikonTheme.triggerHaptic(style: .medium)
-        if let img = image {
-            UIImageWriteToSavedPhotosAlbum(img, nil, nil, nil)
-        }
-        refreshStorageInfo()
     }
 
     /// 直接问相机要全部对象句柄（GetStorageIDs → GetObjectHandles），不经过 ICC 目录。
@@ -439,7 +351,7 @@ public final class UsbCameraManager: NSObject, ObservableObject,
     }
 
     /// App 快门成功后查两次新照片（2.5s 和 6s）。v1.0.14：之前只查一次，
-    /// 相机写卡慢一点（NEF、大卡、连拍后）就查不到，速传永远空着。
+    /// 相机写卡慢一点（NEF、大卡、连拍后）就查不到，图库里就见不到刚拍的。
     private func scheduleCaptureCheck() {
         captureCheckWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.checkForNewCapture(attempt: 1) }
@@ -483,46 +395,44 @@ public final class UsbCameraManager: NSObject, ObservableObject,
                 return
             }
             print("[UsbCameraManager] 拍后复查：发现 \(newHandles.count) 个新对象句柄")
-            // 逐个查文件名（串行，防 DeviceBusy）
-            self.fetchNewCapturedFiles(handles: newHandles, index: 0) {
-                DispatchQueue.main.async { self.resumeLiveViewFetching() }
+            // v1.0.18：逐个查文件名（串行，防 DeviceBusy），查到的直接插进图库，
+            // 不再下载进速传。
+            self.insertNewCapturedFiles(handles: newHandles, index: 0) {
+                DispatchQueue.main.async {
+                    self.refreshStorageInfo()
+                    self.resumeLiveViewFetching()
+                }
             }
         }
     }
 
-    private func fetchNewCapturedFiles(handles: [UInt32], index: Int, done: @escaping () -> Void) {
+    /// v1.0.18：拍后复查的收尾——查到的新对象直接插进图库（文件名+大小+句柄），
+    /// 不再下载。缩略图和保存都走图库的路（GetThumb / ICC+PTP 兜底）。
+    private func insertNewCapturedFiles(handles: [UInt32], index: Int, done: @escaping () -> Void) {
         guard index < handles.count else { done(); return }
         let handle = handles[index]
         sendPTPDataCommand(opCode: 0x1008, params: [handle]) { [weak self] payload, code, _ in
             guard let self = self else { done(); return }
             if let payload = payload, let filename = Self.parseObjectInfoFilename(payload), !filename.isEmpty {
-                if !self.sessionCapturedPhotos.contains(where: { $0.filename == filename }) {
-                    if self.usbMediaFiles.contains(where: { $0.name == filename }) {
-                        // v1.0.17：ICC 下不下来（-9934）时别直接丢，改走 PTP GetObject 取原图。
-                        // 之前这里直接忽略下载结果，ICC 一失败这张就永远进不了速传。
-                        self.downloadUSBFile(named: filename) { [weak self] data in
-                            if data == nil { self?.downloadRawObject(handle: handle, filename: filename) }
-                        }
-                    } else {
-                        self.downloadRawObject(handle: handle, filename: filename)
-                    }
-                }
+                let size = Self.parseObjectInfoSize(payload)
+                MediaSyncService.shared.insertCapturedItem(filename: filename, sizeBytes: size, ptpHandle: handle)
+                DispatchQueue.main.async { self.sessionCapturedFilenames.insert(filename) }
             } else {
                 print("[UsbCameraManager] 新对象 0x\(String(handle, radix: 16)) 读不到文件名（响应 \(code.map { String(format: "0x%04X", $0) } ?? "无")）")
             }
-            self.fetchNewCapturedFiles(handles: handles, index: index + 1, done: done)
+            self.insertNewCapturedFiles(handles: handles, index: index + 1, done: done)
         }
     }
 
-    /// ICC 目录里没有的新照片，直接 PTP GetObject 取原图字节
-    private func downloadRawObject(handle: UInt32, filename: String) {
-        downloadRawObjectData(handle: handle, filename: filename) { [weak self] payload in
-            guard let self = self, let payload = payload, !payload.isEmpty else { return }
-            let img = UIImage(data: payload)
-            DispatchQueue.main.async {
-                self.addCapturedPhoto(image: img, filename: filename, sizeBytes: payload.count)
-            }
+    /// v1.0.18：和 parseObjectInfoFilename 同一套布局判断——标准布局大小在
+    /// 偏移 8，模拟器简化布局在偏移 10。大小只用于图库显示，目录刷新后
+    /// 会按 ICC 的真实 fileSize 纠正。
+    private static func parseObjectInfoSize(_ data: Data) -> UInt64 {
+        if data.count >= 53, let (name, _) = readPTPString(data, offset: 52), !name.isEmpty {
+            return UInt64(data[8]) | (UInt64(data[9]) << 8) | (UInt64(data[10]) << 16) | (UInt64(data[11]) << 24)
         }
+        guard data.count >= 14 else { return 0 }
+        return UInt64(data[10]) | (UInt64(data[11]) << 8) | (UInt64(data[12]) << 16) | (UInt64(data[13]) << 24)
     }
 
     /// v1.0.14：对外暴露的 PTP 原图下载（图库“保存原图”兜底用）。
@@ -531,7 +441,7 @@ public final class UsbCameraManager: NSObject, ObservableObject,
         sendPTPDataCommand(opCode: 0x1009, params: [handle]) { [weak self] payload, _, diag in
             guard let self = self else { completion(nil); return }
             guard let payload = payload, !payload.isEmpty else {
-                self.setDiagnostic("速传取原图失败：\(diag)")
+                self.setDiagnostic("图库取原图失败：\(diag)")
                 completion(nil)
                 return
             }
@@ -549,34 +459,6 @@ public final class UsbCameraManager: NSObject, ObservableObject,
         }
     }
 
-    /// v1.0.14：手动重新扫描——速传页的“重新扫描卡内照片”按钮和
-    /// didAdd 下载失败的兜底都走这里。不依赖拍前快照：直接问卡里最新
-    /// 的 5 个对象，文件名还没进速传的就下载（机身快门拍的也一样能捡回来）。
-    public func rescanCardForNewPhotos() {
-        guard isUsbConnected else { return }
-        // v1.0.17：重新扫描也要用安静通道（PTP 查句柄 + 下载都会被取景帧打断）。
-        pauseLiveViewFetching()
-        setDiagnostic("正在重新扫描卡内照片…")
-        fetchAllObjectHandles { [weak self] handles in
-            guard let self = self, let handles = handles, !handles.isEmpty else {
-                self?.setDiagnostic("重新扫描：读卡句柄失败")
-                DispatchQueue.main.async { [weak self] in self?.resumeLiveViewFetching() }
-                return
-            }
-            // 句柄按拍摄顺序递增，最大的 5 个就是最新的 5 张
-            let newest = Array(handles.sorted(by: >).prefix(5))
-            self.fetchNewCapturedFiles(handles: newest, index: 0) {
-                DispatchQueue.main.async {
-                    self.setDiagnostic("重新扫描完成：本次速传共 \(self.sessionCapturedPhotos.count) 张")
-                    self.resumeLiveViewFetching()
-                }
-            }
-        }
-    }
-
-    /// v1.0.14：图库兜底——ICC 目录迟迟不到时，直接用 PTP 列卡里的文件。
-    /// 返回最新在前的（句柄、文件名、字节数）。limit 默认 300（串行查
-    /// GetObjectInfo，整卡几千张全查太慢；ICC 目录到了走正常路，不受此限）。
     /// v1.0.17：文件名→句柄映射建表时传更大的 limit（卡里 353 张全要）。
     public func fetchCardItemsViaPTP(limit: Int = 300, completion: @escaping ([(handle: UInt32, filename: String, sizeBytes: UInt64)]) -> Void) {
         fetchAllObjectHandles { [weak self] handles in
@@ -706,8 +588,7 @@ public final class UsbCameraManager: NSObject, ObservableObject,
     }
 
     /// v1.0.17：诊断行是不是真报错。控制页和取景页只在真报错时才显示诊断行——
-    /// 平时的进度/成功日志（“正在重新扫描…”“拍后复查：2.5s 未见…”）只在
-    /// 速传页显示，控制页整天挂着十六进制日志看着像坏了。
+    /// 平时的进度/成功日志（“拍后复查：2.5s 未见…”）只记日志，不再显示。
     public var ptpDiagnosticIsError: Bool {
         let markers = ["失败", "被拒", "出错", "无数据", "未识别", "无应答", "超时",
                        "未见新照片", "没有新对象", "读卡句柄失败", "读句柄失败", "跳过"]

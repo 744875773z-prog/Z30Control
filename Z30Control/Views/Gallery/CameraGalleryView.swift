@@ -14,6 +14,15 @@ public struct CameraGalleryView: View {
     @State private var isGridView = false
     @State private var selectedFilterType = "全部"
     @State private var selectedItemForDetail: CameraMediaItem?
+    // v1.0.18：图库多选——选图后批量保存到相册 / 批量分享（速传删了，图库是唯一入口）
+    @State private var isSelecting = false
+    @State private var selectedFilenames: Set<String> = []
+    @State private var batchSaving = false
+    @State private var batchProgress: (Int, Int) = (0, 0)
+    @State private var batchResult: (Int, Int)?
+    @State private var showBatchResult = false
+    @State private var batchShare: ShareBatch?
+    @State private var isBatchSharing = false
     
     public init() {}
     
@@ -51,6 +60,20 @@ public struct CameraGalleryView: View {
                         .foregroundColor(NikonTheme.accentBlue)
                         .frame(width: 36, height: 36)
                         .background(NikonTheme.accentBlueLight)
+                        .cornerRadius(10)
+                }
+                
+                // v1.0.18：多选开关（选图后批量保存/分享）
+                Button(action: {
+                    NikonTheme.triggerHaptic(style: .light)
+                    isSelecting.toggle()
+                    if !isSelecting { selectedFilenames.removeAll() }
+                }) {
+                    Image(systemName: isSelecting ? "checkmark.circle.fill" : "checkmark.circle")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundColor(isSelecting ? .white : NikonTheme.accentBlue)
+                        .frame(width: 36, height: 36)
+                        .background(isSelecting ? NikonTheme.accentBlue : NikonTheme.accentBlueLight)
                         .cornerRadius(10)
                 }
             }
@@ -93,6 +116,45 @@ public struct CameraGalleryView: View {
                 
                 Spacer(minLength: 100)
             }
+            
+            // v1.0.18：多选操作条（选图后批量保存到相册 / 批量分享）
+            if isSelecting {
+                HStack(spacing: 10) {
+                    Text(batchSaving ? "正在保存 \(batchProgress.0)/\(batchProgress.1)…" : isBatchSharing ? "正在取原图…" : "已选 \(selectedFilenames.count) 张")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(NikonTheme.textPrimary)
+                    Spacer()
+                    Button("取消") {
+                        NikonTheme.triggerHaptic(style: .light)
+                        isSelecting = false
+                        selectedFilenames.removeAll()
+                    }
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(NikonTheme.textSecondary)
+                    Button("分享") {
+                        NikonTheme.triggerHaptic(style: .light)
+                        shareSelected()
+                    }
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(NikonTheme.accentBlue)
+                    .disabled(selectedFilenames.isEmpty || batchSaving || isBatchSharing)
+                    Button("保存到相册") {
+                        NikonTheme.triggerHaptic(style: .light)
+                        saveSelected()
+                    }
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(selectedFilenames.isEmpty || batchSaving || isBatchSharing ? NikonTheme.textTertiary.opacity(0.4) : NikonTheme.accentBlue)
+                    .cornerRadius(10)
+                    .disabled(selectedFilenames.isEmpty || batchSaving || isBatchSharing)
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 10)
+                .background(NikonTheme.surfaceCard)
+                .overlay(Rectangle().frame(height: 1).foregroundColor(NikonTheme.borderDim), alignment: .top)
+            }
         }
         .background(NikonTheme.bgPure.ignoresSafeArea())
         .onAppear {
@@ -104,6 +166,73 @@ public struct CameraGalleryView: View {
         }
         .sheet(item: $selectedItemForDetail) { item in
             PhotoExportSheet(item: item)
+        }
+        .sheet(item: $batchShare) { batch in
+            ActivityShareView(activityItems: batch.urls)
+        }
+        .alert("保存完成", isPresented: $showBatchResult) {
+            Button("好的", role: .cancel) { batchResult = nil }
+        } message: {
+            if let r = batchResult {
+                Text(r.0 == r.1 ? "已存入手机 \(r.0) 张。" : "已存入手机 \(r.0) 张，失败 \(r.1 - r.0) 张（相机连接可能断了，可以再选一次）。")
+            }
+        }
+    }
+    
+    // MARK: - v1.0.18：多选批量保存 / 分享
+    private var selectedItems: [CameraMediaItem] {
+        syncService.mediaItems.filter { selectedFilenames.contains($0.filename) }
+    }
+
+    private func cellTapped(_ item: CameraMediaItem) {
+        NikonTheme.triggerHaptic(style: .light)
+        if isSelecting {
+            if selectedFilenames.contains(item.filename) {
+                selectedFilenames.remove(item.filename)
+            } else {
+                selectedFilenames.insert(item.filename)
+            }
+        } else {
+            selectedItemForDetail = item
+        }
+    }
+
+    private func saveSelected() {
+        let items = selectedItems
+        guard !items.isEmpty else { return }
+        batchSaving = true
+        batchProgress = (0, items.count)
+        syncService.saveItems(items, progress: { done, total in
+            DispatchQueue.main.async { self.batchProgress = (done, total) }
+        }, completion: { succeeded, total in
+            DispatchQueue.main.async {
+                self.batchSaving = false
+                self.batchResult = (succeeded, total)
+                self.showBatchResult = true
+                if succeeded == total {
+                    self.isSelecting = false
+                    self.selectedFilenames.removeAll()
+                }
+            }
+        })
+    }
+
+    private func shareSelected() {
+        let items = selectedItems
+        guard !items.isEmpty else { return }
+        isBatchSharing = true
+        syncService.downloadItemsData(items) { results in
+            DispatchQueue.main.async {
+                self.isBatchSharing = false
+                guard !results.isEmpty else { return }
+                var urls: [URL] = []
+                for (filename, data) in results {
+                    let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(filename)
+                    if (try? data.write(to: url)) != nil { urls.append(url) }
+                }
+                guard !urls.isEmpty else { return }
+                self.batchShare = ShareBatch(urls: urls)
+            }
         }
     }
     
@@ -164,8 +293,7 @@ public struct CameraGalleryView: View {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
             ForEach(filteredItems) { item in
                 Button(action: {
-                    NikonTheme.triggerHaptic(style: .light)
-                    selectedItemForDetail = item
+                    cellTapped(item)
                 }) {
                     ZStack(alignment: .bottomLeading) {
                         GalleryThumbImage(item: item)
@@ -182,6 +310,15 @@ public struct CameraGalleryView: View {
                             .cornerRadius(4)
                             .padding(6)
                     }
+                    .overlay(alignment: .topTrailing) {
+                        if isSelecting {
+                            Image(systemName: selectedFilenames.contains(item.filename) ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 22))
+                                .foregroundColor(selectedFilenames.contains(item.filename) ? NikonTheme.accentBlue : .white)
+                                .shadow(color: .black.opacity(0.35), radius: 3)
+                                .padding(6)
+                        }
+                    }
                 }
             }
         }
@@ -192,8 +329,7 @@ public struct CameraGalleryView: View {
         LazyVStack(spacing: 10) {
             ForEach(filteredItems) { item in
                 Button(action: {
-                    NikonTheme.triggerHaptic(style: .light)
-                    selectedItemForDetail = item
+                    cellTapped(item)
                 }) {
                     HStack(spacing: 12) {
                         GalleryThumbImage(item: item)
@@ -212,9 +348,15 @@ public struct CameraGalleryView: View {
                         
                         Spacer()
                         
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(NikonTheme.textTertiary)
+                        if isSelecting {
+                            Image(systemName: selectedFilenames.contains(item.filename) ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 22))
+                                .foregroundColor(selectedFilenames.contains(item.filename) ? NikonTheme.accentBlue : NikonTheme.textTertiary)
+                        } else {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(NikonTheme.textTertiary)
+                        }
                     }
                     .padding(12)
                     .background(NikonTheme.surfaceCard)
@@ -404,7 +546,9 @@ public struct PhotoExportSheet: View {
 
 /// v1.0.17：图库格子/列表/详情共用的缩略图。之前格子只画占位图标，
 /// 是因为根本没人取过缩略图；现在格子露出来时懒加载取一张，取到就显示。
-private struct GalleryThumbImage: View {
+/// v1.0.17：图库缩略图（懒加载 GetThumb）。v1.0.18 起模块内可见，
+/// 取景页的本次拍摄条也用它显示缩略图。
+struct GalleryThumbImage: View {
     let item: CameraMediaItem
     @ObservedObject var syncService = MediaSyncService.shared
     @State private var thumb: UIImage?
@@ -436,6 +580,12 @@ private struct GalleryThumbImage: View {
 }
 
 /// v1.0.17：系统分享用的临时文件包装。
+/// v1.0.18：多选分享的临时文件包
+struct ShareBatch: Identifiable {
+    let id = UUID()
+    let urls: [URL]
+}
+
 private struct ShareItem: Identifiable {
     let id = UUID()
     let url: URL

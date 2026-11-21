@@ -1,9 +1,10 @@
-"""v1.0.17 回归：图库缩略图、速传 -9934、素材选项页、诊断行。
+"""v1.0.17 回归：图库缩略图、素材选项页、诊断行（v1.0.18 修订版）。
 
 Yuan 2026-11-21 18:19-18:26 连报四个问题：
 1. 图库 353 张只列文件名，全是占位图标——之前根本没人取过缩略图。
-2. 速传下载失败 -9934（ICReturnDownloadFailed）：didAdd 下载时取景
-   20fps 还在抢 PTP 通道；且 ICC 失败后复查那条路直接忽略结果。
+2. （v1.0.18 已删速传）原 -9934 根因：didAdd 下载时取景 20fps 还在抢
+   PTP 通道；且 ICC 失败后复查那条路直接忽略结果。现在 didAdd 不再下载，
+   拍后复查只把新文件插进图库；图库保存的下载仍先停帧再下。
 3. 素材选项页：分享按钮只震一下什么都不干；下载失败时 completion
    永远不调，按钮“正在从相机下载…”转到天荒地老；时间比手机快 10
    分钟是相机时钟快（相机设定菜单校准），不是 App 算错。
@@ -103,19 +104,17 @@ def run():
     check("详情预览也取缩略图",
           "previewImage" in gallery and "thumbnail(for: item)" in gallery)
 
-    print("== 速传 -9934：停帧 + 兜底 ==")
+    print("== 速传已删：不再自动下载，拍后复查只插图库 ==")
     check("暂停改成计数式", "liveViewPauseCount" in usb)
     check("停取景时计数清零", "liveViewPauseCount = 0" in usb)
-    check("didAdd 下载前先停取景帧",
-          "if Thread.isMainThread { pauseLiveViewFetching() } else { DispatchQueue.main.sync { pauseLiveViewFetching() } }" in usb)
-    check("downloadUSBFile 默认停帧、重试可跳过",
-          "pauseFrames: Bool = true" in usb and "pauseFrames: false" in usb)
-    check("第一次下载失败不恢复（等重试）",
-          "第一次失败先别恢复取景" in usb)
-    check("复查里 ICC 失败走 PTP 取原图",
-          "if data == nil { self?.downloadRawObject(handle: handle, filename: filename) }" in usb)
-    check("重扫开始停帧、结束恢复",
-          "重新扫描也要用安静通道" in usb)
+    check("didAdd 不再下载（只剩图库保存那一处 requestDownloadFile）",
+          usb.count("requestDownloadFile") == 1)
+    check("拍后复查插进图库（不再下载）",
+          "insertNewCapturedFiles" in usb and "insertCapturedItem" in usb)
+    check("图库保存下载前仍停帧",
+          "func downloadUSBFile" in usb and "pauseLiveViewFetching()" in usb)
+    check("没有速传重试/重扫（rescan 已删）",
+          "rescanCardForNewPhotos" not in usb and "fetchNewCapturedFiles" not in usb)
 
     print("== 素材选项页：真分享 + 下载有答复 ==")
     check("downloadOriginalData 存在且任何路都调 completion",
@@ -137,9 +136,8 @@ def run():
           "if usbCamera.ptpDiagnosticIsError" in control)
     check("读属性成功不再写诊断行",
           "读成功是常态" in usb)
-    check("速传页仍常显示诊断行（就绪/进度）",
-          'usbCamera.ptpDiagnostic.isEmpty ? "就绪"' in
-          read("Z30Control/Views/FastTransfer/FastTransferView.swift"))
+    check("没有速传页再显示诊断行（FastTransferView 已删）",
+          not os.path.exists(os.path.join(ROOT, "Z30Control/Views/FastTransfer/FastTransferView.swift")))
 
     print("== 纯逻辑：暂停计数 ==")
     pc = PauseCounter()
@@ -158,10 +156,8 @@ def run():
     print("== 纯逻辑：诊断分级 ==")
     check("成功日志不是错",
           not is_error("0x1015 → 数据在 first（裸数据）(first 1B / second 12B)，响应 0x2001"))
-    check("下载失败是错", is_error("速传下载失败：未能完成操作。"))
+    check("下载失败是错", is_error("下载失败：未能完成操作。"))
     check("对焦被拒是错", is_error("对焦被拒 0x2008"))
-    check("重扫进度不是错", not is_error("正在重新扫描卡内照片…"))
-    check("重扫完成不是错", not is_error("重新扫描完成：本次速传共 3 张"))
     check("拍后复查跳过是错", is_error("拍后复查跳过：拍前卡快照没读到，只靠相机推送"))
 
     print("== 纯逻辑：下载兜底链 ==")

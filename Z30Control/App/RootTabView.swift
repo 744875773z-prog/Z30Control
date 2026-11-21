@@ -2,7 +2,8 @@
 //  RootTabView.swift
 //  Z30Control
 //
-//  4 大核心 Tab 导航底座 (控制 / 实时取景 / 速传 / 图库)
+//  3 大核心 Tab 导航底座 (控制 / 实时取景 / 图库)
+//  v1.0.18：速传页签删了——拍完照直接进图库，在图库里选图保存/分享。
 //  完美贴底无悬空、状态栏/灵动岛避让无重叠、纯白蓝调对齐网页版
 //
 
@@ -11,14 +12,12 @@ import SwiftUI
 public enum MainTabItem: Int, CaseIterable {
     case control = 0      // 控制
     case liveView = 1     // 实时取景
-    case fastTransfer = 2 // 速传
-    case gallery = 3      // 图库
+    case gallery = 2      // 图库
     
     var title: String {
         switch self {
         case .control: return "控制"
         case .liveView: return "实时取景"
-        case .fastTransfer: return "速传"
         case .gallery: return "图库"
         }
     }
@@ -27,7 +26,6 @@ public enum MainTabItem: Int, CaseIterable {
         switch self {
         case .control: return "camera.fill"
         case .liveView: return "viewfinder"
-        case .fastTransfer: return "dot.radiowaves.left.and.right"
         case .gallery: return "photo.stack.fill"
         }
     }
@@ -61,8 +59,6 @@ public struct RootTabView: View {
                         LiveViewMonitorView(cameraState: cameraState, onExitToControl: {
                             selectedTab = .control
                         })
-                    case .fastTransfer:
-                        FastTransferView()
                     case .gallery:
                         CameraGalleryView()
                     }

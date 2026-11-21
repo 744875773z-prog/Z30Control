@@ -38,6 +38,9 @@ public struct LiveViewMonitorView: View {
     @State private var showingWiredHelp = false
     // v1.0.15：未连接空状态里的“连接 Wi-Fi 热点”入口，直接在本页弹出连接向导。
     @State private var showingConnectionWizard = false
+    // v1.0.18：拍摄条点一张打开的图库详情页（保存/分享）
+    @State private var selectedGalleryItem: CameraMediaItem?
+    @ObservedObject private var syncService = MediaSyncService.shared
     
     // 参数选择面板（v1.0.14：之前是系统 ActionSheet，iOS 27 上弹出后被底栏
     // 挡住大半、点不到值。现在改成页内自己的底部面板，永远在底栏上面。）
@@ -72,6 +75,9 @@ public struct LiveViewMonitorView: View {
                     portraitProHUD
                         .sheet(isPresented: $showingConnectionWizard) {
                             ConnectionWizardView()
+                        }
+                        .sheet(item: $selectedGalleryItem) { item in
+                            PhotoExportSheet(item: item)
                         }
                 }
 
@@ -142,16 +148,6 @@ public struct LiveViewMonitorView: View {
                 startLiveViewForActiveTransport()
             }
         }
-        .onChange(of: usbCamera.lastCapturedFilename) { name in
-            // v1.0.4：机身快门或 App 快门拍完、照片真下载回来后，才回显真图+真文件名。
-            // 之前快门按钮当场就随机编个 DSC_xxxx 弹“拍摄完成”，相机根本没拍。
-            guard !name.isEmpty else { return }
-            showPreview(
-                filename: name,
-                title: "拍摄完成 · 即时预览 (2s)",
-                subtitle: usbCamera.lastCapturedPhoto != nil ? "已回传并存入相册" : "已回传至手机"
-            )
-        }
     }
     
     // MARK: - v1.0.3：按当前通路启停取景（USB-C / Wi-Fi PTP/IP）
@@ -190,24 +186,6 @@ public struct LiveViewMonitorView: View {
                         liveViewImage(frameImg)
                     } else if let usbLiveImg = usbCamera.currentLiveViewImage {
                         liveViewImage(usbLiveImg)
-                    } else if let lastPhoto = usbCamera.lastCapturedPhoto {
-                        liveViewImage(lastPhoto)
-                            .overlay(
-                                VStack {
-                                    Spacer()
-                                    HStack {
-                                        Text("📷 最新联机拍摄成片")
-                                            .font(.system(size: 11, weight: .bold))
-                                            .padding(.horizontal, 8)
-                                            .padding(.vertical, 4)
-                                            .background(Color.black.opacity(0.65))
-                                            .foregroundColor(.white)
-                                            .cornerRadius(6)
-                                        Spacer()
-                                    }
-                                    .padding(12)
-                                }
-                            )
                     } else {
                         // 具有电影景深感与动态光斑的高拟真光学实景监看底图 (绝非死黑图标)
                         photographicLiveViewBackground(size: geo.size)
@@ -365,7 +343,7 @@ public struct LiveViewMonitorView: View {
                         }
                     }
                     
-                    Text("💡 联机模式：按相机机身快门拍摄，成片将立即全屏回显并存入手机")
+                    Text("💡 联机模式：按相机机身快门拍摄，成片直接进图库，在图库里选图保存")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.white.opacity(0.7))
                         .multilineTextAlignment(.center)
@@ -462,8 +440,9 @@ public struct LiveViewMonitorView: View {
 
                 if !isCleanScreen {
                     // v1.0.14：本次拍摄缩略图条——之前画面和底栏之间是一大块纯黑
-                    // 空地。现在拍过的照片直接出现在这里，点一张就全屏回看。
-                    if !usbCamera.sessionCapturedPhotos.isEmpty {
+                    // 空地。现在拍过的照片直接出现在这里，点一张进详情页保存/分享。
+                    // v1.0.18：速传删了，条里显示的是本次拍摄的照片在图库里的项目。
+                    if !sessionItems.isEmpty {
                         recentShotsStrip
                             .padding(.horizontal, 12)
                             .padding(.bottom, 8)
@@ -816,11 +795,17 @@ public struct LiveViewMonitorView: View {
         .buttonStyle(PlainButtonStyle())
     }
 
-    // MARK: - v1.0.14：本次拍摄缩略图条（点一张全屏回看）
+    /// v1.0.18：本次拍摄的照片（按文件名从图库里取）。拍完照成片直接进图库，
+    /// 这里只显示这次联机拍过的那几张。
+    private var sessionItems: [CameraMediaItem] {
+        syncService.mediaItems.filter { usbCamera.sessionCapturedFilenames.contains($0.filename) }
+    }
+
+    // MARK: - v1.0.14：本次拍摄缩略图条（点一张进详情页保存/分享）
     private var recentShotsStrip: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Text("本次拍摄 \(usbCamera.sessionCapturedPhotos.count) 张")
+                Text("本次拍摄 \(sessionItems.count) 张")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundColor(.white)
                 Spacer()
@@ -837,32 +822,16 @@ public struct LiveViewMonitorView: View {
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(Array(usbCamera.sessionCapturedPhotos.enumerated()), id: \.element.id) { _, item in
+                    ForEach(sessionItems, id: \.id) { item in
                         Button(action: {
                             NikonTheme.triggerHaptic(style: .light)
-                            // 点缩略图就全屏回看这张（复用拍完的即时回放浮层）
-                            if let img = item.image {
-                                usbCamera.lastCapturedPhoto = img
-                                usbCamera.lastCapturedFilename = item.filename
-                            }
+                            selectedGalleryItem = item
                         }) {
-                            Group {
-                                if let img = item.image {
-                                    Image(uiImage: img)
-                                        .resizable()
-                                        .scaledToFill()
-                                } else {
-                                    Color.white.opacity(0.15)
-                                        .overlay(
-                                            Image(systemName: "photo")
-                                                .foregroundColor(.white.opacity(0.6))
-                                        )
-                                }
-                            }
-                            .frame(width: 64, height: 48)
-                            .cornerRadius(8)
-                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.25), lineWidth: 0.8))
-                            .clipped()
+                            GalleryThumbImage(item: item)
+                                .frame(width: 64, height: 48)
+                                .cornerRadius(8)
+                                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.25), lineWidth: 0.8))
+                                .clipped()
                         }
                     }
                 }
@@ -1090,8 +1059,8 @@ public struct LiveViewMonitorView: View {
     // MARK: - 触发快门拍摄（v1.0.4：真的发 InitiateCapture）
     // 之前是假的：不发任何命令，只随机编个 DSC_xxxx.JPG 弹“拍摄完成”，
     // 还顺手把剩余张数减 1。相机根本没拍。
-    // 现在：发拍摄命令；成功只代表“已触发”，成片随后经 didAdd 下载回来，
-    // 由 onChange(lastCapturedFilename) 回显真图。失败则报原因。
+    // 现在：发拍摄命令；成功只代表“已触发”，成片随后进图库（didAdd 或
+    // 2.5s/6s 拍后复查）。失败则报原因。
     // MARK: - v1.0.16：AF-ON 真对焦（之前是假的，只亮 0.6 秒绿灯）
     /// 按下对画面中心发 AfDrive (0x90C1)。绿=对焦中（相机回 0x2001 后熄灭），
     /// 红闪=相机拒答、没回音或根本没连相机。5 秒没回执也算失败——Wi-Fi 那条
@@ -1141,14 +1110,21 @@ public struct LiveViewMonitorView: View {
             usbCamera.capturePhoto { ok, err in
                 DispatchQueue.main.async {
                     self.isCapturing = false
-                    if !ok {
+                    if ok {
+                        // v1.0.18：速传删了，不再等下载回显。触发成功就提示一声，
+                        // 成片 2.5s/6s 后进图库和拍摄条。
+                        self.showPreview(
+                            filename: nil,
+                            title: "快门已触发",
+                            subtitle: "已触发，成片见图库"
+                        )
+                    } else {
                         self.showPreview(
                             filename: nil,
                             title: "快门触发失败",
                             subtitle: err ?? "相机无响应"
                         )
                     }
-                    // 成功时不弹东西，等照片真下载回来再回显
                 }
             }
         } else if connectionService.isConnected {
@@ -1159,7 +1135,7 @@ public struct LiveViewMonitorView: View {
                         self.showPreview(
                             filename: nil,
                             title: "快门已触发",
-                            subtitle: "速传中，完成后见图库"
+                            subtitle: "已触发，成片见图库"
                         )
                     } else {
                         self.showPreview(
@@ -1217,19 +1193,10 @@ public struct LiveViewMonitorView: View {
                 
                 Spacer()
                 
-                // 有真图就显示真图，否则只显示状态图标
-                if let img = usbCamera.lastCapturedPhoto, filename != " " {
-                    Image(uiImage: img)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxHeight: 320)
-                        .cornerRadius(10)
-                        .padding(.horizontal, 16)
-                } else {
-                    Image(systemName: previewTitle.contains("失败") || previewTitle.contains("未连接") ? "xmark.circle.fill" : "checkmark.circle.fill")
-                        .font(.system(size: 56))
-                        .foregroundColor(previewTitle.contains("失败") || previewTitle.contains("未连接") ? Color(red: 1.0, green: 0.45, blue: 0.35) : NikonTheme.readyGreen)
-                }
+                // v1.0.18：速传删了，不再回显真图——只显示状态图标（成功打勾/失败打叉）。
+                Image(systemName: previewTitle.contains("失败") || previewTitle.contains("未连接") ? "xmark.circle.fill" : "checkmark.circle.fill")
+                    .font(.system(size: 56))
+                    .foregroundColor(previewTitle.contains("失败") || previewTitle.contains("未连接") ? Color(red: 1.0, green: 0.45, blue: 0.35) : NikonTheme.readyGreen)
                 
                 Text(previewSubtitle)
                     .font(.system(size: 12, weight: .medium))
@@ -1324,7 +1291,7 @@ public struct LiveViewMonitorView: View {
                         }
                         
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("• 【USB-C 有线模式】（当前）：像素蛋糕同款底层，用于高保真联机拍摄与拍立得速传。使用机身快门拍摄，照片瞬间秒传至手机并存入相册。")
+                            Text("• 【USB-C 有线模式】（当前）：高保真联机拍摄。使用机身快门或 App 快门拍摄，成片直接进图库，在图库里选图保存到手机。")
                                 .font(.system(size: 12))
                                 .foregroundColor(.secondary)
                             Text("• 【Wi-Fi 模式】：若需要无线 60 帧实时镜头画面预览与远程调参，在相机上按 MENU ➔ 连接至智能设备 ➔ 开启 Wi-Fi，手机连入相机热点即可。")

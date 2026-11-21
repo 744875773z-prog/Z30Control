@@ -1,8 +1,10 @@
-"""v1.0.14 回归：档位识别、白平衡编解码、拍后复查重试、手动重扫。
+"""v1.0.14 回归：档位识别、白平衡编解码、拍后复查重试。
+（v1.0.18：手动重扫 rescanCardForNewPhotos 已删——速传没了，重扫没了
+入口；那三项镜像检查一并删掉。）
 
 镜像 Swift 端的纯逻辑（UsbCameraManager 0x500E 解析、decodeWhiteBalance、
-checkForNewCapture 两次复查、rescanCardForNewPhotos 取最新 5 个句柄），
-跑在仓库自带的模拟器协议层之外，只验逻辑表本身。
+checkForNewCapture 两次复查），跑在仓库自带的模拟器协议层之外，
+只验逻辑表本身。
 v1.0.17 更正：U1/U2/U3 不是 0x8011~0x8013——真机实测（Yuan 2026-11-21
 拨动拨盘报回的原始值）是 0x8050=U1、0x8051=U2、0x8052=U3。
 AUTO=0x8010 仍是推断，未实测；认不出的值走 .unknown 并显示原始值，
@@ -41,12 +43,6 @@ def capture_check_attempts(new_handles_sequence):
             return None, 0
     return None, 0
 
-# --- 手动重扫：取卡里最新的 5 个句柄，跳过已进速传的文件名 ---
-def rescan_newest(handles, captured_filenames, filename_of):
-    newest = sorted(handles, reverse=True)[:5]
-    return [h for h in newest if filename_of(h) not in captured_filenames]
-
-
 def run():
     passed = failed = 0
     def check(name, got, want):
@@ -81,15 +77,6 @@ def run():
     check("2.5s 查到", capture_check_attempts([1]), (1, 1))
     check("2.5s 没查到、6s 查到", capture_check_attempts([0, 2]), (2, 2))
     check("两次都没查到", capture_check_attempts([0, 0]), (None, 0))
-
-    print("== 手动重扫取最新 5 张 ==")
-    handles = [1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008]
-    names = {h: "DSC_%04d.JPG" % h for h in handles}
-    check("最新 5 个句柄", rescan_newest(handles, set(), names.__getitem__),
-          [1008, 1007, 1006, 1005, 1004])
-    check("已进速传的跳过", rescan_newest(handles, {"DSC_1008.JPG", "DSC_1006.JPG"}, names.__getitem__),
-          [1007, 1005, 1004])
-    check("卡里不足 5 张全取", rescan_newest([1001, 1002], set(), names.__getitem__), [1002, 1001])
 
     print(f"\n通过 {passed} 项，失败 {failed} 项")
     return 0 if failed == 0 else 1
