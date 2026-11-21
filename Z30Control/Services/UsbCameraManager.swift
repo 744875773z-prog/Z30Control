@@ -361,12 +361,58 @@ public final class UsbCameraManager: NSObject, ObservableObject,
         return packet
     }
 
+    /// v1.0.5：从 requestSendPTPCommand 的两个回包参数里找数据。
+    /// 实测（2026-11-21 录屏）证明：只读第二个参数永远只能拿到 12 字节响应包，
+    /// 数据不在那。苹果这个接口的 block 是 (first, second, error)，second 一定是
+    /// 响应容器；first 可能是数据——带 12 字节头的数据容器，也可能是裸数据；
+    /// 也可能是原样回显的命令包。三种都处理，绝不再把数据扔掉。
+    /// 返回：数据载荷（无则 nil）、响应码、给诊断行看的一句话。
+    private static func extractPTPData(first: Data, second: Data) -> (payload: Data?, responseCode: UInt16?, note: String) {
+        // 1) second 是响应容器 → 取响应码（两个参数里响应一定在这）
+        var code: UInt16? = nil
+        if second.count >= 8 {
+            let t = UInt16(second[4]) | (UInt16(second[5]) << 8)
+            if t == 0x0003 { code = UInt16(second[6]) | (UInt16(second[7]) << 8) }
+        }
+        // 2) second 本身是数据容器 → 之前就有的路（以防万一）
+        if second.count >= 12 {
+            let t = UInt16(second[4]) | (UInt16(second[5]) << 8)
+            if t == 0x0002 {
+                let dataLen = Int(UInt32(second[0]) | (UInt32(second[1]) << 8) | (UInt32(second[2]) << 16) | (UInt32(second[3]) << 24))
+                let end = min(dataLen, second.count)
+                if end > 12 { return (second.subdata(in: 12..<end), code, "数据在 second（容器）") }
+            }
+        }
+        // 3) first 是数据容器（12 字节头 + 载荷）
+        if first.count >= 12 {
+            let len = Int(UInt32(first[0]) | (UInt32(first[1]) << 8) | (UInt32(first[2]) << 16) | (UInt32(first[3]) << 24))
+            let t = UInt16(first[4]) | (UInt16(first[5]) << 8)
+            if len == first.count && t == 0x0002 {
+                return (first.subdata(in: 12..<first.count), code, "数据在 first（容器）")
+            }
+            if len == first.count && t == 0x0001 {
+                return (nil, code, "first 为命令回显，无数据")
+            }
+            if len == first.count && t == 0x0003 {
+                return (nil, code, "first 也是响应包，无数据")
+            }
+            // first 不是完整容器 → 当裸数据（电量 1 字节、JPEG、StorageInfo 数据集都长这样）
+            return (first, code, "数据在 first（裸数据）")
+        }
+        if first.count > 0 {
+            return (first, code, "数据在 first（裸数据）")
+        }
+        return (nil, code, "两参均无数据")
+    }
+
     /// v1.0.4：统一的 USB PTP 数据读取入口。之前每个地方各自猜响应格式，
     /// 读不到就静悄悄返回，取景和参数全灭也不吭声。现在把三种可能都处理了，
     /// 并把结果写进 ptpDiagnostic（控制页可见），下次实测一眼就知道卡在哪一步：
     /// - 数据容器 (type 0x0002)：载荷在 12 字节头后面（GetDevicePropValue、GetStorageInfo 都是这种）
     /// - 响应容器 (type 0x0003)：只有 12 字节响应码，没有数据段——说明这条路拿不到数据
     /// - 数据容器后跟响应包：顺手把响应码也读出来
+    /// v1.0.5：实测证明数据根本不在第二个参数里（GetDevicePropValue 只回 12 字节
+    /// 响应包 0x2001，取景每帧也只有 12B）。改走 extractPTPData，两个参数都看。
     private func sendPTPDataCommand(opCode: UInt16, params: [UInt32] = [], completion: @escaping (Data?, UInt16?, String) -> Void) {
         guard let camera = activeCamera, isUsbConnected else {
             completion(nil, nil, "未连接相机")
@@ -374,39 +420,14 @@ public final class UsbCameraManager: NSObject, ObservableObject,
         }
         let label = String(format: "0x%04X", opCode)
         let cmd = buildPTPCommandPacket(opCode: opCode, params: params)
-        camera.requestSendPTPCommand(cmd, outData: nil) { [weak self] (_, responseData, error) in
+        camera.requestSendPTPCommand(cmd, outData: nil) { (first, second, error) in
             if let error = error {
                 completion(nil, nil, "\(label) 出错：\(error.localizedDescription)")
                 return
             }
-            guard responseData.count >= 12 else {
-                completion(nil, nil, "\(label) 响应仅 \(responseData.count)B，无数据")
-                return
-            }
-            let type = UInt16(responseData[4]) | (UInt16(responseData[5]) << 8)
-            if type == 0x0002 {
-                // 数据容器：[0-3]长度 [4-5]类型 [6-7]操作码 [8-11]事务号 [12+]数据
-                let dataLen = UInt32(responseData[0]) | (UInt32(responseData[1]) << 8) | (UInt32(responseData[2]) << 16) | (UInt32(responseData[3]) << 24)
-                let end = min(Int(dataLen), responseData.count)
-                guard end > 12 else {
-                    completion(nil, nil, "\(label) 数据容器为空")
-                    return
-                }
-                let payload = responseData.subdata(in: 12..<end)
-                var code: UInt16? = nil
-                if responseData.count >= end + 10 {
-                    let t2 = UInt16(responseData[end + 4]) | (UInt16(responseData[end + 5]) << 8)
-                    if t2 == 0x0003 {
-                        code = UInt16(responseData[end + 6]) | (UInt16(responseData[end + 7]) << 8)
-                    }
-                }
-                completion(payload, code, "\(label) → 数据 \(payload.count)B" + (code.map { String(format: "，响应 0x%04X", $0) } ?? ""))
-            } else if type == 0x0003 {
-                let code = UInt16(responseData[6]) | (UInt16(responseData[7]) << 8)
-                completion(nil, code, String(format: "\(label) → 只回响应包 0x%04X，无数据段", code))
-            } else {
-                completion(nil, nil, String(format: "\(label) → 未知容器类型 0x%04X", type))
-            }
+            let (payload, code, note) = Self.extractPTPData(first: first, second: second)
+            let diag = "\(label) → \(note)（first \(first.count)B / second \(second.count)B）" + (code.map { String(format: "，响应 0x%04X", $0) } ?? "")
+            completion(payload, code, diag)
         }
     }
 
@@ -786,7 +807,7 @@ public final class UsbCameraManager: NSObject, ObservableObject,
                 print("[UsbCameraManager] 取景看门狗：3 秒内未收到帧")
                 self.stopLiveView()
                 DispatchQueue.main.async {
-                    self.liveViewError = "已启动但 3 秒内未收到取景帧：请确认相机处于拍照模式（非回放/菜单），USB 数据连接设为 iPhone/PTP 后重连"
+                    self.liveViewError = "已启动但 3 秒内未收到取景帧：请确认相机处于拍照模式（非回放/菜单），USB 设为 MTP/PTP 后重连"
                 }
             }
         }
@@ -835,7 +856,7 @@ public final class UsbCameraManager: NSObject, ObservableObject,
         isFetchingFrame = true
 
         let getCmd = buildPTPCommandPacket(opCode: NikonPTPOpCode.nikonGetLiveViewImg.rawValue)
-        camera.requestSendPTPCommand(getCmd, outData: nil) { [weak self] (sentCommand, responseData, error) in
+        camera.requestSendPTPCommand(getCmd, outData: nil) { [weak self] (first, second, error) in
             defer { self?.isFetchingFrame = false }
             guard let self = self else { return }
             if let error = error {
@@ -843,21 +864,21 @@ public final class UsbCameraManager: NSObject, ObservableObject,
                 return
             }
 
-            // v1.0.4：之前要求 >128 字节且找不到 JPEG 就静默丢弃，黑屏无任何提示。
-            // 现在把失败原因记下来（节流 1 秒一次，避免 20fps 刷屏）。
-            guard responseData.count > 64 else {
-                self.noteFrameError("取景帧仅 \(responseData.count)B，无图像数据")
+            // v1.0.5：数据可能在 first 里（数据容器或裸 JPEG），也可能在 second 里。
+            // 之前只看 second，second 永远是 12 字节响应包，所以每帧都报“仅 12B，无图像数据”。
+            let (payload, _, note) = Self.extractPTPData(first: first, second: second)
+            guard let payload = payload, payload.count > 64 else {
+                self.noteFrameError("取景帧无图像数据（\(note)，first \(first.count)B / second \(second.count)B）")
                 return
             }
 
             // 直接搜索 JPEG SOI 标记 0xFF 0xD8，不依赖固定偏移量
-            let bytes = [UInt8](responseData)
+            let bytes = [UInt8](payload)
             guard let jpegStart = self.findJPEGStart(in: bytes) else {
-                let t = responseData.count >= 6 ? String(format: "容器类型 0x%04X", UInt16(bytes[4]) | (UInt16(bytes[5]) << 8)) : "短包"
-                self.noteFrameError("取景帧 \(responseData.count)B，无 JPEG 标记（\(t)）")
+                self.noteFrameError("取景帧 \(payload.count)B，无 JPEG 标记（\(note)）")
                 return
             }
-            let jpegData = responseData.subdata(in: jpegStart..<responseData.count)
+            let jpegData = payload.subdata(in: jpegStart..<payload.count)
 
             if let img = UIImage(data: jpegData) {
                 self.lastFrameAt = Date()
@@ -865,7 +886,7 @@ public final class UsbCameraManager: NSObject, ObservableObject,
                     self.currentLiveViewImage = img
                     self.fpsCounter += 1
                     // 同时更新 LiveViewStreamService 的帧
-                    if let frame = LiveViewParser.parse(rawPayload: responseData) {
+                    if let frame = LiveViewParser.parse(rawPayload: payload) {
                         LiveViewStreamService.shared.updateFrame(frame)
                     }
                 }
@@ -894,7 +915,9 @@ public final class UsbCameraManager: NSObject, ObservableObject,
             completion(false, "相机未连接")
             return
         }
-        let cmd = buildPTPCommandPacket(opCode: NikonPTPOpCode.initiateCapture.rawValue, params: [0xFFFFFFFF, 0])
+        // v1.0.5：存储 ID 不能用 0xFFFFFFFF（“任意存储”），尼康会报 0x2008 无效存储 ID。
+        // Z30 只有一个 SD 卡槽，存储 ID 是 0x00010001。
+        let cmd = buildPTPCommandPacket(opCode: NikonPTPOpCode.initiateCapture.rawValue, params: [0x00010001, 0])
         camera.requestSendPTPCommand(cmd, outData: nil) { [weak self] (_, responseData, error) in
             if let error = error {
                 completion(false, error.localizedDescription)

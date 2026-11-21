@@ -2,6 +2,16 @@
 
 一款专为**尼康 Z30（Nikon Z30）**设计的专业级 iOS 相机控制、3D LUT 胶片监看、无线相册与“按相机保护键自动速传”应用程序。
 
+## v1.0.5 修复说明（实机录屏：数据回包读错了参数）
+
+真机症状（2026-11-21 15:49 录屏）：USB 连上，但存储/电量仍是“--”，取景每帧只有 12B、看门狗 3 秒报错，快门报 0x2008。根因：
+
+1. **数据读错了回包参数**：`requestSendPTPCommand` 的 block 是 `(first, second, error)`，second 一定是响应容器；数据（如果有）在 first 里。之前只读 second，所以 GetDevicePropValue 永远只拿到 12 字节响应包 0x2001，取景每帧也只有 12B。现在新增 `extractPTPData`，两个参数都看：first 是数据容器就去头，是裸数据（电量 1 字节、JPEG、StorageInfo 数据集）就整体当载荷，是命令回显就明说无数据；诊断行会写清两个参数各多少字节，下次实测一眼定位。
+2. **快门存储 ID 错了**：InitiateCapture 传了 0xFFFFFFFF（“任意存储”），尼康报 0x2008 无效存储 ID。改传 0x00010001（Z30 的 SD 卡槽）。Wi-Fi 侧同样改了。
+3. **看门狗提示词错了**：之前写“USB 数据连接设为 iPhone/PTP”，这是错的——尼康手册里 iPhone 模式是专给 NX MobileAir 用的，选了它第三方 App 根本连不上相机（用户照着提示切过去果然断连）。正确的是 **MTP/PTP**。提示已改。
+
+> 提醒：如果 first 里也不是数据（诊断显示“first 为命令回显，无数据”），那 USB 这条路在 ImageCaptureCore 下就拿不到数据阶段，只能走 Wi-Fi PTP/IP（原始 TCP，自己控制数据阶段，已在模拟器上验证通过）或改用 delegate 形式的 `requestSendPTPCommand`（回包分 `inData`/`response` 两路）。请先试 Wi-Fi：拔掉 USB 线，相机开 Wi-Fi 热点，手机连上热点后在 App 里走 Wi-Fi 连接。
+
 ## v1.0.4 修复说明（真机录屏发现的假数据与断链）
 
 真机症状（2026-11-21 实机录屏）：USB 连上显示“已连接”，但仪表盘存储 24/64GB、剩余 40.5GB、36%、2,840 张，电量 85%；取景一直黑屏；图库 0 张。根因仍在 App 代码：

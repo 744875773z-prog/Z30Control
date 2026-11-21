@@ -466,10 +466,11 @@ public final class PtpIpClient {
     /// 事件通道的 ObjectAdded (0x4002) 回来，由 MediaSyncService 接手下载。
     public func initiateCapture(completion: @escaping (Bool) -> Void) {
         guard isSessionOpen else { completion(false); return }
+        // v1.0.5：存储 ID 用 0x00010001（Z30 的 SD 卡槽），0xFFFFFFFF 会被尼康报 0x2008 无效存储 ID
         let packet = PtpIpPacket.makeCmdRequest(
             opCode: PtpOperationCode.initiateCapture.rawValue,
             transactionId: nextTransactionId(),
-            params: [0xFFFFFFFF, 0]
+            params: [0x00010001, 0]
         )
         sendCmdPacket(packet) { [weak self] resp in
             completion(self?.cmdResponseCode(resp) == PtpResponseCode.ok.rawValue)
