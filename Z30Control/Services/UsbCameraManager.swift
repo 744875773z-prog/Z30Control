@@ -327,9 +327,9 @@ public final class UsbCameraManager: NSObject, ObservableObject,
     /// 连接成功后，全量读取所有关键属性
     private func fetchAllCameraProperties() {
         guard let camera = activeCamera, isUsbConnected else { return }
-        // camera.capabilities 是 [String]，用 ICDeviceCapability 枚举的 rawValue 匹配
+        // camera.capabilities 是非可选的 [String]，用 ICDeviceCapability rawValue 匹配
         let ptpCap = ICDeviceCapability.cameraDeviceCanAcceptPTPCommands.rawValue
-        guard camera.capabilities?.contains(where: { $0 == ptpCap }) == true else {
+        guard camera.capabilities.contains(where: { $0 == ptpCap }) else {
             print("[PTP] 该设备不支持 PTP 命令，跳过属性读取")
             return
         }
@@ -546,9 +546,9 @@ public final class UsbCameraManager: NSObject, ObservableObject,
             return
         }
         guard !isLiveViewStreaming else { return }
-        // camera.capabilities 是 [String]，用 ICDeviceCapability 枚举的 rawValue 匹配
+        // camera.capabilities 是非可选的 [String]，用 ICDeviceCapability rawValue 匹配
         let ptpCap = ICDeviceCapability.cameraDeviceCanAcceptPTPCommands.rawValue
-        guard camera.capabilities?.contains(where: { $0 == ptpCap }) == true else {
+        guard camera.capabilities.contains(where: { $0 == ptpCap }) else {
             print("[UsbCameraManager] 相机不支持 PTP 命令，无法开启 LiveView")
             return
         }
