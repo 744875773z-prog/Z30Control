@@ -269,6 +269,15 @@ public struct LiveViewMonitorView: View {
         }
     }
 
+    // v1.0.20：取景按钮带上帧分辨率（相机实际发来的那帧多大）。
+    private var liveViewStreamLabel: String {
+        let size = streamService.currentFrameSize
+        if size != .zero {
+            return "取景中 \(Int(size.width))×\(Int(size.height))"
+        }
+        return "取景中"
+    }
+
     // MARK: - 真实拟真光学取景底图 (消除死黑画面)
     private func photographicLiveViewBackground(size: CGSize) -> some View {
         ZStack {
@@ -465,6 +474,15 @@ public struct LiveViewMonitorView: View {
                                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                                 .foregroundColor(.white)
                                 .shadow(color: .black, radius: 2)
+
+                            // v1.0.20：取景帧实际分辨率（相机发来的那帧多大）。
+                            // 满屏放大几倍看必然糊，先让这个数字看得见。
+                            if streamService.currentFrameSize != .zero {
+                                Text("\(Int(streamService.currentFrameSize.width))×\(Int(streamService.currentFrameSize.height))")
+                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.white.opacity(0.85))
+                                    .shadow(color: .black, radius: 2)
+                            }
                         }
                         
                         // 曝光参数垂直卡片 (点击调参)
@@ -496,6 +514,19 @@ public struct LiveViewMonitorView: View {
                                     .foregroundColor(.white)
                                     .frame(width: 34, height: 34)
                                     .background(Color.black.opacity(0.4))
+                                    .clipShape(Circle())
+                            }
+
+                            // v1.0.20：取景增强开关（降噪+锐化，默认开）。
+                            Button(action: {
+                                NikonTheme.triggerHaptic(style: .light)
+                                streamService.isEnhanceEnabled.toggle()
+                            }) {
+                                Image(systemName: "wand.and.stars")
+                                    .font(.system(size: 15, weight: .bold))
+                                    .foregroundColor(streamService.isEnhanceEnabled ? NikonTheme.nikonYellow : .white.opacity(0.5))
+                                    .frame(width: 34, height: 34)
+                                    .background(Color.black.opacity(streamService.isEnhanceEnabled ? 0.4 : 0.2))
                                     .clipShape(Circle())
                             }
                         }
@@ -580,7 +611,7 @@ public struct LiveViewMonitorView: View {
                     HStack(spacing: 4) {
                         Image(systemName: isAnyLiveViewStreaming ? "video.fill" : "video.slash")
                             .font(.system(size: 10, weight: .bold))
-                        Text(isAnyLiveViewStreaming ? "取景中" : "启动取景")
+                        Text(isAnyLiveViewStreaming ? liveViewStreamLabel : "启动取景")
                             .font(.system(size: 11, weight: .bold))
                     }
                     .foregroundColor(isAnyLiveViewStreaming ? .black : .white)
@@ -804,6 +835,24 @@ public struct LiveViewMonitorView: View {
                         .font(.system(size: 10, weight: .bold))
                 }
                 .foregroundColor(.white)
+                .frame(width: 48, height: 48)
+                .background(Color.black.opacity(0.6))
+                .cornerRadius(14)
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.18), lineWidth: 0.8))
+            }
+
+            // v1.0.20：取景增强开关（降噪+锐化，默认开）。
+            Button(action: {
+                NikonTheme.triggerHaptic(style: .light)
+                streamService.isEnhanceEnabled.toggle()
+            }) {
+                VStack(spacing: 3) {
+                    Image(systemName: "wand.and.stars")
+                        .font(.system(size: 16))
+                    Text(streamService.isEnhanceEnabled ? "增强" : "关")
+                        .font(.system(size: 10, weight: .bold))
+                }
+                .foregroundColor(streamService.isEnhanceEnabled ? NikonTheme.nikonYellow : .white)
                 .frame(width: 48, height: 48)
                 .background(Color.black.opacity(0.6))
                 .cornerRadius(14)

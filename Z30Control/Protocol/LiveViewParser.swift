@@ -29,13 +29,34 @@ public struct LiveViewFrame {
     
     /// 抓取时间戳
     public let timestamp: TimeInterval
-    
+
+    /// 帧像素尺寸（从 JPEG SOF 段解析；解析不到为 .zero）。
+    /// v1.0.20：让取景页把相机实际发来的取景分辨率显示出来——
+    /// 尼康 PTP 取景帧本身只有几百像素，手机满屏放大几倍看必然糊，
+    /// 这是相机发来的上限，不是 App 压坏的。
+    public var pixelSize: CGSize = .zero
+
+    /// 增强后的图（降噪+锐化，见 LiveViewStreamService）。有它时优先用它。
+    public var enhancedImage: UIImage? = nil
+
     #if canImport(UIKit)
     /// 快捷解码为 UIImage
     public var image: UIImage? {
+        if let enhanced = enhancedImage { return enhanced }
         return UIImage(data: jpegData)
     }
     #endif
+
+    public init(jpegData: Data, horizonRoll: Float, horizonPitch: Float, isInFocus: Bool, focusRect: CGRect?, timestamp: TimeInterval, pixelSize: CGSize = .zero, enhancedImage: UIImage? = nil) {
+        self.jpegData = jpegData
+        self.horizonRoll = horizonRoll
+        self.horizonPitch = horizonPitch
+        self.isInFocus = isInFocus
+        self.focusRect = focusRect
+        self.timestamp = timestamp
+        self.pixelSize = pixelSize
+        self.enhancedImage = enhancedImage
+    }
 }
 
 /// 尼康 LiveView 帧解析器
@@ -96,8 +117,35 @@ public final class LiveViewParser {
             horizonPitch: pitchAngle,
             isInFocus: inFocus,
             focusRect: focusBox,
-            timestamp: Date().timeIntervalSince1970
+            timestamp: Date().timeIntervalSince1970,
+            pixelSize: Self.parseJPEGSize(jpegData) ?? .zero
         )
+    }
+
+    /// 从 JPEG 里读 SOF0/SOF2 段的宽高（取景帧实际像素尺寸）。
+    /// 走法：SOI 后逐段跳（段长含自身 2 字节），遇到 0xC0/0xC2 读
+    /// 精度(1B)+高(U16BE)+宽(U16BE)；遇到 SOS(0xDA)/EOI 停。
+    public static func parseJPEGSize(_ data: Data) -> CGSize? {
+        let b = [UInt8](data)
+        guard b.count > 4, b[0] == 0xFF, b[1] == 0xD8 else { return nil }
+        var i = 2
+        while i + 3 < b.count {
+            guard b[i] == 0xFF else { return nil }
+            let marker = b[i + 1]
+            if marker == 0xD8 || marker == 0x01 { i += 2; continue } // SOI/填充
+            if marker == 0xD9 || marker == 0xDA { return nil } // EOI/SOS：帧头区已过
+            if marker == 0xC0 || marker == 0xC2 {
+                guard i + 9 < b.count else { return nil }
+                let h = Int(b[i + 5]) << 8 | Int(b[i + 6])
+                let w = Int(b[i + 7]) << 8 | Int(b[i + 8])
+                guard w > 0, h > 0 else { return nil }
+                return CGSize(width: w, height: h)
+            }
+            let segLen = Int(b[i + 2]) << 8 | Int(b[i + 3])
+            guard segLen >= 2 else { return nil }
+            i += 2 + segLen
+        }
+        return nil
     }
     
     /// 二进制序列查找算法
