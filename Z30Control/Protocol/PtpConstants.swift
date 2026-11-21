@@ -101,7 +101,7 @@ public enum PtpDevicePropertyCode: UInt16 {
     case exposureTime            = 0x500D // 快门速度
     case exposureProgramMode     = 0x500E // 曝光模式 (P / S / A / M)
     case exposureIndex           = 0x500F // ISO 感光度
-    case exposureBiasCompensation= 0x5010 // 曝光补偿 (+/- EV)
+    case exposureBiasCompensation = 0x5010 // 曝光补偿 (+/- EV)
     case stillCaptureMode        = 0x5013 // 驱动模式 (单张/连拍/自拍)
     
     // 尼康专有优化校准与色彩属性
