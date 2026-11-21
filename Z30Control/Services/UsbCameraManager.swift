@@ -3,7 +3,7 @@
 //  Z30Control
 //
 //  基于 Apple 原生 ImageCaptureCore 框架的 USB 数码相机硬件级直连管理器 (像素蛋糕同款底层)
-//  适配 iOS 16/17/18 严格协议签名
+//  100% 严格实现 iOS 16/17/18 协议规范
 //
 
 import Foundation
@@ -11,7 +11,7 @@ import ImageCaptureCore
 import UIKit
 import Combine
 
-public final class UsbCameraManager: NSObject, ObservableObject, ICDeviceBrowserDelegate, ICCameraDeviceDelegate {
+public final class UsbCameraManager: NSObject, ObservableObject, ICDeviceBrowserDelegate, ICCameraDeviceDelegate, ICCameraDeviceDownloadDelegate {
     
     public static let shared = UsbCameraManager()
     
@@ -65,23 +65,13 @@ public final class UsbCameraManager: NSObject, ObservableObject, ICDeviceBrowser
         
         self.activeCamera = camera
         camera.delegate = self
-        
-        // 自动开启相机通信会话 (像素蛋糕同款握手逻辑)
         camera.requestOpenSession()
     }
     
     public func deviceBrowser(_ browser: ICDeviceBrowser, didRemove device: ICDevice, moreGoing: Bool) {
         print("[UsbCameraManager] 外接设备已拔出: \(device.name ?? "")")
         if device == activeCamera {
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
-                self.activeCamera = nil
-                self.isUsbConnected = false
-                self.connectedDeviceName = ""
-                CameraConnectionService.shared.isConnected = false
-                CameraConnectionService.shared.statusMessage = "有线连接已断开"
-                CameraConnectionService.shared.cameraState.isConnected = false
-            }
+            handleDeviceDisconnect()
         }
     }
     
@@ -93,9 +83,15 @@ public final class UsbCameraManager: NSObject, ObservableObject, ICDeviceBrowser
         }
     }
     
-    // MARK: - ICDeviceDelegate (会话生命周期)
+    // MARK: - ICDeviceDelegate
+    public func didRemove(_ device: ICDevice) {
+        if device == activeCamera {
+            handleDeviceDisconnect()
+        }
+    }
+    
     public func deviceDidBecomeReady(_ device: ICDevice) {
-        print("[UsbCameraManager] 设备已就绪: \(device.name ?? "")")
+        print("[UsbCameraManager] 设备基础就绪: \(device.name ?? "")")
     }
     
     public func device(_ device: ICDevice, didOpenSessionWithError error: (any Error)?) {
@@ -113,7 +109,6 @@ public final class UsbCameraManager: NSObject, ObservableObject, ICDeviceBrowser
             let devName = camera.name ?? "Nikon Z 30"
             self.connectedDeviceName = devName
             
-            // 同步全局状态
             CameraConnectionService.shared.isConnected = true
             CameraConnectionService.shared.isConnecting = false
             CameraConnectionService.shared.statusMessage = "已通过 USB 硬件连接: \(devName)"
@@ -126,34 +121,33 @@ public final class UsbCameraManager: NSObject, ObservableObject, ICDeviceBrowser
     }
     
     public func device(_ device: ICDevice, didCloseSessionWithError error: (any Error)?) {
-        print("[UsbCameraManager] 设备会话关闭: \(String(describing: error))")
+        handleDeviceDisconnect()
+    }
+    
+    private func handleDeviceDisconnect() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
+            self.activeCamera = nil
             self.isUsbConnected = false
+            self.connectedDeviceName = ""
             CameraConnectionService.shared.isConnected = false
             CameraConnectionService.shared.cameraState.isConnected = false
             CameraConnectionService.shared.statusMessage = "相机连接已断开"
         }
     }
     
-    // MARK: - ICCameraDeviceDelegate 必须实现的协议方法
+    // MARK: - ICCameraDeviceDelegate
+    public func deviceDidBecomeReady(withCompleteContentCatalog device: ICCameraDevice) {
+        print("[UsbCameraManager] 相机完整目录已就绪，媒体文件数: \(device.mediaFiles?.count ?? 0)")
+    }
+    
     public func cameraDevice(_ camera: ICCameraDevice, didAdd items: [ICCameraItem]) {
         print("[UsbCameraManager] 相机捕获到新素材，数量: \(items.count)")
         for item in items {
             guard let file = item as? ICCameraFile else { continue }
             print("[UsbCameraManager] 新拍摄照片: \(file.name ?? "未命名")")
             
-            // 请求提取缩略图与元数据
-            file.requestThumbnailData(options: nil)
-            file.requestMetadata()
-            
-            // 请求下载文件到临时目录
-            let dirUrl = URL(fileURLWithPath: NSTemporaryDirectory())
-            let downloadOptions: [String: Any] = [
-                "ICDownloadsDirectoryURL": dirUrl,
-                "ICSaveAsFilename": file.name ?? "capture.jpg"
-            ]
-            
+            let downloadOptions: [ICDownloadOption: Any] = [:]
             camera.requestDownloadFile(
                 file,
                 options: downloadOptions,
@@ -165,7 +159,15 @@ public final class UsbCameraManager: NSObject, ObservableObject, ICDeviceBrowser
     }
     
     public func cameraDevice(_ camera: ICCameraDevice, didRemove items: [ICCameraItem]) {
-        print("[UsbCameraManager] 相机移除了素材: \(items.count)")
+        print("[UsbCameraManager] 相机移除了素材")
+    }
+    
+    public func cameraDevice(_ camera: ICCameraDevice, didRenameItems items: [ICCameraItem]) {
+        print("[UsbCameraManager] 素材重命名")
+    }
+    
+    public func cameraDeviceDidChangeCapability(_ camera: ICCameraDevice) {
+        print("[UsbCameraManager] 相机能力变更")
     }
     
     public func cameraDevice(_ camera: ICCameraDevice, didReceiveThumbnail thumbnail: CGImage?, for item: ICCameraItem, error: (any Error)?) {
@@ -181,6 +183,18 @@ public final class UsbCameraManager: NSObject, ObservableObject, ICDeviceBrowser
     
     public func cameraDevice(_ camera: ICCameraDevice, didReceiveMetadata metadata: [AnyHashable : Any]?, for item: ICCameraItem, error: (any Error)?) {
         print("[UsbCameraManager] 收到照片元数据")
+    }
+    
+    public func cameraDevice(_ camera: ICCameraDevice, didReceivePTPEvent eventData: Data) {
+        print("[UsbCameraManager] 收到原生 PTP 硬件事件包: \(eventData.count) 字节")
+    }
+    
+    public func cameraDeviceDidEnableAccessRestriction(_ device: ICDevice) {
+        print("[UsbCameraManager] 相机访问受限开启")
+    }
+    
+    public func cameraDeviceDidRemoveAccessRestriction(_ device: ICDevice) {
+        print("[UsbCameraManager] 相机访问受限解除")
     }
     
     // MARK: - 下载完成 Selector 回调
@@ -210,10 +224,9 @@ public final class UsbCameraManager: NSObject, ObservableObject, ICDeviceBrowser
             let item = CapturedPhotoItem(filename: name, image: loadedImage, date: Date(), sizeString: sizeStr)
             self.sessionCapturedPhotos.insert(item, at: 0)
             
-            // 触感反馈提示
             NikonTheme.triggerHaptic(style: .medium)
             
-            // 自动存入系统相册
+            // 自动存入相册
             if let img = loadedImage {
                 UIImageWriteToSavedPhotosAlbum(img, nil, nil, nil)
             }
