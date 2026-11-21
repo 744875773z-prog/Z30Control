@@ -57,7 +57,8 @@ def run():
     check("横屏时底栏收窄到 420pt 居中", ".frame(maxWidth: 420)" in root)
 
     print("== 源码：取景页还是强制横屏 ==")
-    check("进取景页强制横屏", "OrientationLock.lockLandscape()" in live)
+    # v1.0.22 起：取景页改锁竖屏（画面在页内转 90°），底栏原位置不动
+    check("进取景页锁定竖屏（v1.0.22 起）", "OrientationLock.lockPortrait()" in live)
     check("离页恢复竖屏", "OrientationLock.unlockToPortrait()" in live)
     check("OrientationLock 还在",
           "func lockLandscape()" in lock and "func unlockToPortrait()" in lock)

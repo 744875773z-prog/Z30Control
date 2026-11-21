@@ -116,9 +116,10 @@ public struct LiveViewMonitorView: View {
             wiredConnectionGuidanceSheet
         }
         .onAppear {
-            // v1.0.19：取景器强制横屏——用户横着拿手机当取景器，不想一直开
-            // 方向锁定。进页就转横，离页恢复竖屏（图库/控制页是竖的）。
-            OrientationLock.lockLandscape()
+            // v1.0.22：整页锁定竖屏，底栏在原来位置不动，只有中间取景画面
+            // 在页内转 90°（见 liveViewImage）。手机横过来拿，画面正过来铺满；
+            // 系统方向锁定也不用开了，App 自己锁竖屏。
+            OrientationLock.lockPortrait()
             // v1.0.3：之前这里只启动 USB 取景，Wi-Fi（PTP/IP）连上后从不发
             // StartLiveView，所以画面永远是黑的。现在按当前通路启动。
             startLiveViewForActiveTransport()
@@ -176,9 +177,9 @@ public struct LiveViewMonitorView: View {
                 // 1. 核心画面渲染层 (优先渲染真实视频流 / 最新快门成片 / 光学景深取景底图)
                 Group {
                     if let frameImg = streamService.currentFrame?.image {
-                        liveViewImage(frameImg)
+                        liveViewImage(frameImg, size: geo.size)
                     } else if let usbLiveImg = usbCamera.currentLiveViewImage {
-                        liveViewImage(usbLiveImg)
+                        liveViewImage(usbLiveImg, size: geo.size)
                     } else {
                         // 具有电影景深感与动态光斑的高拟真光学实景监看底图 (绝非死黑图标)
                         photographicLiveViewBackground(size: geo.size)
@@ -228,9 +229,11 @@ public struct LiveViewMonitorView: View {
                 self.touchFocusPosition = location
                 self.isFocusPulsing = true
                 
+                // v1.0.22：画面顺时针转了 90°，点按坐标也要跟着转：
+                // 屏上点 (nx, ny) 对应帧上 (ny, 1-nx)——帧左上角转到了屏右上角。
                 let normX = Float(location.x / geo.size.width)
                 let normY = Float(location.y / geo.size.height)
-                CameraConnectionService.shared.client.setTouchFocus(x: normX, y: normY)
+                CameraConnectionService.shared.client.setTouchFocus(x: normY, y: 1 - normX)
                 
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                     self.isFocusPulsing = false
@@ -248,25 +251,29 @@ public struct LiveViewMonitorView: View {
     /// 满屏：画面铺满整个视口（两边裁一点），上下不再留黑边——默认就是这个，
     /// 之前完整画面时 3:2 的帧在竖屏手机上天然上下各留一条大黑边。
     /// 完整：整帧都看得见，画面顶到 HUD 下面（不再垂直居中留两条黑边）。
-    private func liveViewImage(_ img: UIImage) -> some View {
+    // MARK: - v1.0.22：只有中间取景画面是横的
+    /// 整页锁定竖屏（见 onAppear 的 lockPortrait），取景帧在画面内顺时针
+    /// 转 90°：帧先按（高×宽）铺满/完整，再转 90°，外框裁回竖屏尺寸。
+    /// 手机横过来拿（顶朝左），画面正过来铺满；底栏、参数条、快门键都
+    /// 在竖屏原位置，不动也不消失。完整模式不再顶 110pt 留白，画面居中。
+    private func liveViewImage(_ img: UIImage, size: CGSize) -> some View {
         Group {
             if isFillScreen {
                 Image(uiImage: img)
                     .resizable()
                     .scaledToFill()
+                    .frame(width: size.height, height: size.width)
+                    .rotationEffect(.degrees(90))
             } else {
-                VStack(spacing: 0) {
-                    // v1.0.15：完整模式下画面顶到 HUD 下面。之前这里留了 200pt，
-                    // 是按旧版顶栏位置估的；v1.0.15 顶栏上移后 HUD+参数约占 110pt，
-                    // 200 会在画面上面多留一条黑边。
-                    Spacer().frame(height: 110)
-                    Image(uiImage: img)
-                        .resizable()
-                        .scaledToFit()
-                    Spacer()
-                }
+                Image(uiImage: img)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: size.height, height: size.width)
+                    .rotationEffect(.degrees(90))
             }
         }
+        .frame(width: size.width, height: size.height)
+        .clipped()
     }
 
     // v1.0.20：取景按钮带上帧分辨率（相机实际发来的那帧多大）。

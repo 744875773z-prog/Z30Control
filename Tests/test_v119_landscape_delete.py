@@ -89,7 +89,8 @@ def run():
           and ".landscape" in orient and ".allButUpsideDown" in orient)
     check("App 入口挂了 AppDelegate",
           "@UIApplicationDelegateAdaptor(AppDelegate.self)" in app)
-    check("进取景页锁横屏", "OrientationLock.lockLandscape()" in live)
+    # v1.0.22 起：取景页改锁竖屏（画面在页内转 90°），不再锁横屏
+    check("进取景页锁竖屏（v1.0.22 起）", "OrientationLock.lockPortrait()" in live)
     check("离取景页恢复竖屏", "OrientationLock.unlockToPortrait()" in live)
     check("快门键贴底栏上方（96pt 空隙已清）",
           ".padding(.bottom, 12 + max(geo.safeAreaInsets.bottom - 20, 0))" in live
