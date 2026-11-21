@@ -10,7 +10,6 @@ import SwiftUI
 public struct ControlDashboardView: View {
     @ObservedObject var cameraState: CameraState
     @ObservedObject var connectionService = CameraConnectionService.shared
-    @ObservedObject var permissionManager = PermissionManager.shared
     
     @State private var isPulsing = false
     @State private var showingModelMenu = false
@@ -48,7 +47,6 @@ public struct ControlDashboardView: View {
         }
         .background(NikonTheme.bgPure.ignoresSafeArea())
         .onAppear {
-            permissionManager.requestAllRequiredPermissions()
             withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
                 isPulsing = true
             }
@@ -233,7 +231,7 @@ public struct ControlDashboardView: View {
                     .foregroundColor(NikonTheme.textTertiary)
                 
                 Button(action: {
-                    PermissionManager.openSystemSettings()
+                    openSystemSettings()
                 }) {
                     HStack(spacing: 4) {
                         Image(systemName: "gearshape")
@@ -357,7 +355,7 @@ public struct ControlDashboardView: View {
                                 .foregroundColor(NikonTheme.accentBlue)
                             Spacer()
                             Button("前往设置") {
-                                PermissionManager.openSystemSettings()
+                                openSystemSettings()
                             }
                             .font(.system(size: 13, weight: .bold))
                             .foregroundColor(NikonTheme.accentBlue)
@@ -440,5 +438,12 @@ public struct ControlDashboardView: View {
                 }
             }
         }
+    }
+    
+    // MARK: - 安全跳转系统设置
+    private func openSystemSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString),
+              UIApplication.shared.canOpenURL(url) else { return }
+        UIApplication.shared.open(url, options: [:], completionHandler: nil)
     }
 }
