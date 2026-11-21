@@ -3,7 +3,7 @@
 //  Z30Control
 //
 //  4 大核心 Tab 导航底座 (控制 / 实时取景 / 速传 / 图库)
-//  100% 完整对齐网页版 4 大 Tab 架构与纯白蓝调视觉体系
+//  完美贴底无悬空、状态栏/灵动岛避让无重叠、纯白蓝调对齐网页版
 //
 
 import SwiftUI
@@ -35,7 +35,7 @@ public enum MainTabItem: Int, CaseIterable {
 
 public struct RootTabView: View {
     @StateObject private var cameraState = CameraState()
-    @State private var selectedTab: MainTabItem = .control // 默认进入【控制】页 (对齐网页版图 2)
+    @State private var selectedTab: MainTabItem = .control
     
     public init() {}
     
@@ -43,69 +43,76 @@ public struct RootTabView: View {
         GeometryReader { geometry in
             let isLandscape = geometry.size.width > geometry.size.height
             
-            ZStack(alignment: .bottom) {
-                // MARK: - 主页面分发
+            VStack(spacing: 0) {
+                // MARK: - 主页面分发区 (占满上方，并在常规页面规避顶部状态栏)
                 Group {
                     switch selectedTab {
                     case .control:
                         ControlDashboardView(cameraState: cameraState)
+                            .padding(.top, max(geometry.safeAreaInsets.top, 20))
                     case .liveView:
-                        LiveViewMonitorView(cameraState: cameraState)
+                        LiveViewMonitorView(cameraState: cameraState, onExitToControl: {
+                            selectedTab = .control
+                        })
                     case .fastTransfer:
                         FastTransferView()
+                            .padding(.top, max(geometry.safeAreaInsets.top, 20))
                     case .gallery:
                         CameraGalleryView()
+                            .padding(.top, max(geometry.safeAreaInsets.top, 20))
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .ignoresSafeArea() // 确保在 LaunchScreen 加持下，满幅适配 iPhone 16 Pro Max 全屏
                 
-                // MARK: - 底部 TabBar (横屏下自动隐藏，竖屏下纯白蓝调对齐网页版)
+                // MARK: - 底部 TabBar (绝对贴底，绝不悬空，横屏下自动隐藏)
                 if !isLandscape {
-                    pureWhiteBlueTabBar
-                        .padding(.bottom, max(geometry.safeAreaInsets.bottom, 6))
+                    pureWhiteBlueTabBar(bottomInset: geometry.safeAreaInsets.bottom)
                 }
             }
-            .ignoresSafeArea(.keyboard, edges: .bottom)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.white.ignoresSafeArea())
         }
+        .ignoresSafeArea(.keyboard, edges: .bottom)
+        .ignoresSafeArea(.container, edges: .bottom) // 允许底部背景直通屏幕物理底边缘
     }
     
-    // MARK: - 纯白蓝调网页版 1:1 导航栏
-    private var pureWhiteBlueTabBar: some View {
-        HStack(spacing: 0) {
-            ForEach(MainTabItem.allCases, id: \.self) { tab in
-                let isSelected = (selectedTab == tab)
-                
-                Button(action: {
-                    NikonTheme.triggerHaptic(style: .light)
-                    selectedTab = tab
-                }) {
-                    VStack(spacing: 4) {
-                        Image(systemName: tab.iconName)
-                            .font(.system(size: 20, weight: isSelected ? .bold : .medium))
-                            .foregroundColor(isSelected ? NikonTheme.accentBlue : NikonTheme.textTertiary)
-                        
-                        Text(tab.title)
-                            .font(.system(size: 11, weight: isSelected ? .bold : .medium))
-                            .foregroundColor(isSelected ? NikonTheme.accentBlue : NikonTheme.textTertiary)
+    // MARK: - 纯白蓝调网页版 1:1 导航栏 (贴底无白块断层)
+    private func pureWhiteBlueTabBar(bottomInset: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            // 顶部分隔线
+            Rectangle()
+                .fill(NikonTheme.borderDim)
+                .frame(height: 0.8)
+            
+            // 4 个 Tab 按钮行
+            HStack(spacing: 0) {
+                ForEach(MainTabItem.allCases, id: \.self) { tab in
+                    let isSelected = (selectedTab == tab)
+                    
+                    Button(action: {
+                        NikonTheme.triggerHaptic(style: .light)
+                        selectedTab = tab
+                    }) {
+                        VStack(spacing: 3) {
+                            Image(systemName: tab.iconName)
+                                .font(.system(size: 21, weight: isSelected ? .bold : .medium))
+                                .foregroundColor(isSelected ? NikonTheme.accentBlue : NikonTheme.textTertiary)
+                            
+                            Text(tab.title)
+                                .font(.system(size: 11, weight: isSelected ? .bold : .medium))
+                                .foregroundColor(isSelected ? NikonTheme.accentBlue : NikonTheme.textTertiary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
                     }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 52)
+                    .buttonStyle(PlainButtonStyle())
                 }
-                .buttonStyle(PlainButtonStyle())
             }
+            .padding(.horizontal, 10)
+            
+            // 垫高 iPhone 16 Pro Max 底部手势横条安全区
+            Spacer().frame(height: max(bottomInset - 6, 8))
         }
-        .padding(.horizontal, 10)
-        .padding(.top, 6)
-        .background(
-            Color.white
-                .shadow(color: Color.black.opacity(0.04), radius: 10, x: 0, y: -4)
-                .overlay(
-                    Rectangle()
-                        .fill(NikonTheme.borderDim)
-                        .frame(height: 0.8),
-                    alignment: .top
-                )
-        )
+        .background(Color.white)
     }
 }

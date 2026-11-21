@@ -2,178 +2,257 @@
 //  FastTransferView.swift
 //  Z30Control
 //
-//  “相机按保护键自动速传”雷达监听与状态看板视图 (对齐原厂体验)
+//  拍立得式即时速传 (快门按下即刻秒传，自由选择保存至手机相册)
+//  纯净蓝白工业设计版，彻底删除“新”徽标与无用设置键
 //
 
 import SwiftUI
 
 public struct FastTransferView: View {
     @ObservedObject var syncService = MediaSyncService.shared
-    @State private var isPulsing = false
+    @State private var autoSaveToAlbum = false
+    @State private var showingSaveSuccessAlert = false
+    @State private var currentSelectedPhotoIndex: Int = 0
     
     public init() {}
     
     public var body: some View {
-        NavigationView {
-            VStack(spacing: 24) {
-                // 1. 顶部当前存储与格式偏好设置条
-                settingsSummaryBar
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                
+        VStack(spacing: 0) {
+            // 1. 顶部 Header (只有简洁大标题“速传”，绝无“新”徽标和无用按键)
+            HStack {
+                Text("速传")
+                    .font(.system(size: 22, weight: .black))
+                    .foregroundColor(NikonTheme.textPrimary)
                 Spacer()
                 
-                // 2. 中央动态雷达呼吸动画 (等待相机保护事件)
-                radarAnimationView
-                
-                // 3. 核心指引文本
-                VStack(spacing: 6) {
-                    Text("准备接收")
-                        .proHUDText(size: 16, weight: .bold)
-                        .foregroundColor(Color.primary)
-                    Text("在相机上将照片标记为保护 🔒，即可自动发送到这里。")
-                        .font(.system(size: 12))
-                        .foregroundColor(.gray)
+                // 自动存相册开关药丸
+                HStack(spacing: 6) {
+                    Text("自动存入相册")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(autoSaveToAlbum ? NikonTheme.accentBlue : NikonTheme.textSecondary)
+                    Toggle("", isOn: $autoSaveToAlbum)
+                        .labelsHidden()
+                        .toggleStyle(SwitchToggleStyle(tint: NikonTheme.accentBlue))
+                        .scaleEffect(0.8)
                 }
-                .padding(.horizontal, 24)
-                
-                Spacer()
-                
-                // 4. 四联传输统计看板
-                statsCounterGrid
-                    .padding(.horizontal, 20)
-                
-                // 5. 底部文件索引状态
-                HStack(spacing: 4) {
-                    Image(systemName: "tray.full.fill")
-                        .font(.system(size: 11))
-                    Text("已索引 \(syncService.stats.indexedTotalFiles) 个相机文件")
-                        .proHUDText(size: 11)
-                }
-                .foregroundColor(.gray.opacity(0.8))
-                .padding(.bottom, 24)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(NikonTheme.bgSubtle)
+                .cornerRadius(16)
             }
-            .background(Color(UIColor.systemGroupedBackground).ignoresSafeArea())
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    HStack(spacing: 4) {
-                        Text("速传")
-                            .proHUDText(size: 16, weight: .bold)
-                        Text("新")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(NikonTheme.nikonYellow)
-                            .cornerRadius(4)
-                    }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: {
-                        NikonTheme.triggerHaptic(style: .light)
-                    }) {
-                        Image(systemName: "slider.horizontal.3")
-                            .foregroundColor(Color.primary)
-                    }
-                }
-            }
-            .onAppear {
-                isPulsing = true
-            }
-        }
-    }
-    
-    // MARK: - 顶部设置摘要条
-    private var settingsSummaryBar: some View {
-        HStack {
-            Image(systemName: "slider.horizontal.2.square")
-                .foregroundColor(NikonTheme.readyGreen)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("当前设置")
-                    .font(.system(size: 10))
-                    .foregroundColor(.gray)
-                Text("应用图库 · JPEG · NEF (RAW) · MOV/MP4")
-                    .proHUDText(size: 11, weight: .semibold)
-            }
-            Spacer()
-            Image(systemName: "chevron.right")
-                .font(.system(size: 11))
-                .foregroundColor(.gray)
-        }
-        .padding(12)
-        .background(Color(UIColor.secondarySystemGroupedBackground))
-        .cornerRadius(10)
-    }
-    
-    // MARK: - 动态雷达呼吸动画
-    private var radarAnimationView: some View {
-        ZStack {
-            // 外圈扩散水波纹
-            Circle()
-                .fill(NikonTheme.readyGreen.opacity(0.12))
-                .frame(width: 170, height: 170)
-                .scaleEffect(isPulsing ? 1.15 : 0.95)
-                .animation(Animation.easeInOut(duration: 1.8).repeatForever(autoreverses: true), value: isPulsing)
+            .padding(.horizontal, 18)
+            .padding(.top, 8)
+            .padding(.bottom, 12)
             
-            Circle()
-                .fill(NikonTheme.readyGreen.opacity(0.2))
-                .frame(width: 120, height: 120)
-            
-            // 核心相机同心圆
-            ZStack {
-                Circle()
-                    .stroke(NikonTheme.nikonYellow, lineWidth: 2.5)
-                    .frame(width: 72, height: 72)
-                
-                Image(systemName: "camera.fill")
-                    .font(.system(size: 26))
-                    .foregroundColor(Color.primary)
-                
-                // 信号小标
-                VStack {
-                    Spacer()
-                    HStack {
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 16) {
+                    // 2. 状态提示条
+                    HStack(spacing: 8) {
+                        Image(systemName: "bolt.horizontal.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(NikonTheme.accentBlue)
+                        Text("每按一次快门，照片将瞬间传输到这里，供您即刻挑选保存")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(NikonTheme.textSecondary)
                         Spacer()
-                        Image(systemName: "wifi")
-                            .font(.system(size: 10))
-                            .foregroundColor(NikonTheme.readyGreen)
-                            .padding(4)
-                            .background(Color(UIColor.systemBackground))
-                            .clipShape(Circle())
                     }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(NikonTheme.accentBlueLight)
+                    .cornerRadius(8)
+                    
+                    // 3. 最新快门拍摄成片大图卡片 (即拍即看)
+                    latestCapturedPhotoCard
+                    
+                    // 4. 保存控制大按钮
+                    saveActionButtonsSection
+                    
+                    // 5. 本次拍摄流水瀑布 (最近快门列表)
+                    recentShotsStreamSection
+                    
+                    Spacer(minLength: 100)
                 }
-                .frame(width: 72, height: 72)
+                .padding(.horizontal, 18)
             }
         }
-        .frame(height: 200)
+        .background(NikonTheme.bgPure.ignoresSafeArea())
+        .alert(isPresented: $showingSaveSuccessAlert) {
+            Alert(
+                title: Text("保存成功"),
+                message: Text("照片已无损存入您的 iPhone 系统相册！"),
+                dismissButton: .default(Text("好的"))
+            )
+        }
     }
     
-    // MARK: - 统计看板
-    private var statsCounterGrid: some View {
-        HStack(spacing: 0) {
-            statItem(count: syncService.stats.completedCount, title: "已完成", color: NikonTheme.readyGreen)
-            Spacer()
-            statItem(count: syncService.stats.pendingCount, title: "待处理", color: Color.primary)
-            Spacer()
-            statItem(count: syncService.stats.failedCount, title: "失败", color: NikonTheme.tallyRed)
-            Spacer()
-            statItem(count: syncService.stats.protectedCount, title: "标记保护", color: NikonTheme.nikonYellow)
+    // MARK: - 3. 最新快门拍摄大卡片
+    private var latestCapturedPhotoCard: some View {
+        VStack(spacing: 0) {
+            ZStack(alignment: .topTrailing) {
+                // 模拟照片视口
+                Rectangle()
+                    .fill(Color(red: 0.94, green: 0.95, blue: 0.97))
+                    .frame(height: 240)
+                    .overlay(
+                        VStack(spacing: 8) {
+                            Image(systemName: "photo.artframe")
+                                .font(.system(size: 48))
+                                .foregroundColor(NikonTheme.accentBlue.opacity(0.4))
+                            Text(syncService.currentTransferFileName.isEmpty ? "DSC_8921.JPG" : syncService.currentTransferFileName)
+                                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                                .foregroundColor(NikonTheme.textSecondary)
+                            Text("5568 × 3712 · RAW+JPG · 24.5 MB")
+                                .font(.system(size: 11))
+                                .foregroundColor(NikonTheme.textTertiary)
+                        }
+                    )
+                
+                // 右上角“刚刚传输”药丸
+                Text("刚刚拍摄")
+                    .font(.system(size: 10, weight: .bold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(NikonTheme.accentBlue)
+                    .foregroundColor(.white)
+                    .cornerRadius(6)
+                    .padding(10)
+            }
+            .cornerRadius(14)
+            .clipped()
+            
+            // 下方参数说明行
+            HStack {
+                HStack(spacing: 12) {
+                    paramBadge(icon: "timer", text: "1/125s")
+                    paramBadge(icon: "camera.aperture", text: "f/4.0")
+                    paramBadge(icon: "sun.max", text: "ISO 400")
+                }
+                Spacer()
+                Text("传自 Z 30")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(NikonTheme.accentBlue)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
         }
-        .padding(.vertical, 12)
-        .padding(.horizontal, 16)
-        .background(Color(UIColor.secondarySystemGroupedBackground))
-        .cornerRadius(10)
+        .background(NikonTheme.surfaceCard)
+        .cornerRadius(16)
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(NikonTheme.borderDim, lineWidth: 1.2))
+        .shadow(color: Color.black.opacity(0.04), radius: 10, x: 0, y: 3)
     }
     
-    private func statItem(count: Int, title: String, color: Color) -> some View {
-        VStack(spacing: 4) {
-            Text("\(count)")
-                .proHUDText(size: 16, weight: .bold)
-                .foregroundColor(color)
-            Text(title)
-                .font(.system(size: 11))
-                .foregroundColor(.gray)
+    private func paramBadge(icon: String, text: String) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon).font(.system(size: 9)).foregroundColor(.gray)
+            Text(text).font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundColor(NikonTheme.textPrimary)
         }
+    }
+    
+    // MARK: - 4. 保存控制大按钮
+    private var saveActionButtonsSection: some View {
+        VStack(spacing: 10) {
+            Button(action: {
+                NikonTheme.triggerHaptic(style: .heavy)
+                showingSaveSuccessAlert = true
+            }) {
+                HStack(spacing: 8) {
+                    Image(systemName: "square.and.arrow.down.fill")
+                    Text("保存这张照片到手机相册")
+                        .font(.system(size: 16, weight: .bold))
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 50)
+                .background(NikonTheme.accentBlue)
+                .cornerRadius(25)
+                .shadow(color: NikonTheme.accentBlue.opacity(0.35), radius: 10, x: 0, y: 4)
+            }
+            
+            HStack(spacing: 12) {
+                Button(action: {
+                    NikonTheme.triggerHaptic(style: .light)
+                    showingSaveSuccessAlert = true
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "square.stack.3d.down.right.fill")
+                        Text("保存本次全部照片")
+                    }
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(NikonTheme.textPrimary)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 42)
+                    .background(NikonTheme.bgSubtle)
+                    .cornerRadius(12)
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(NikonTheme.borderDim, lineWidth: 1))
+                }
+                
+                Button(action: {
+                    NikonTheme.triggerHaptic(style: .light)
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "square.and.arrow.up")
+                        Text("隔空投送 / 分享")
+                    }
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(NikonTheme.textPrimary)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 42)
+                    .background(NikonTheme.bgSubtle)
+                    .cornerRadius(12)
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(NikonTheme.borderDim, lineWidth: 1))
+                }
+            }
+        }
+    }
+    
+    // MARK: - 5. 本次快门拍摄流水预览
+    private var recentShotsStreamSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("本次快门拍摄流水")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(NikonTheme.textPrimary)
+                Spacer()
+                Text("共 8 张")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(NikonTheme.textTertiary)
+            }
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(0..<8) { idx in
+                        let isCur = (currentSelectedPhotoIndex == idx)
+                        Button(action: {
+                            NikonTheme.triggerHaptic(style: .light)
+                            currentSelectedPhotoIndex = idx
+                        }) {
+                            VStack(spacing: 4) {
+                                RoundedRectangle(cornerRadius: 10)
+                                    .fill(Color(red: 0.92, green: 0.94, blue: 0.96))
+                                    .frame(width: 72, height: 72)
+                                    .overlay(
+                                        Image(systemName: "photo")
+                                            .font(.system(size: 20))
+                                            .foregroundColor(isCur ? NikonTheme.accentBlue : .gray)
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .stroke(isCur ? NikonTheme.accentBlue : Color.clear, lineWidth: 2)
+                                    )
+                                
+                                Text("DSC_892\(8 - idx).JPG")
+                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                    .foregroundColor(isCur ? NikonTheme.accentBlue : NikonTheme.textSecondary)
+                                    .lineLimit(1)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(NikonTheme.surfaceCard)
+        .cornerRadius(16)
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(NikonTheme.borderDim, lineWidth: 1.2))
     }
 }

@@ -27,8 +27,11 @@ public struct LiveViewMonitorView: View {
     // 参数选择 Sheet
     @State private var activeParamPicker: String? = nil
     
-    public init(cameraState: CameraState) {
+    var onExitToControl: (() -> Void)? = nil
+    
+    public init(cameraState: CameraState, onExitToControl: (() -> Void)? = nil) {
         self.cameraState = cameraState
+        self.onExitToControl = onExitToControl
     }
     
     public var body: some View {
@@ -49,9 +52,39 @@ public struct LiveViewMonitorView: View {
                     portraitProHUD
                 }
                 
-                // 4. 清屏状态下轻巧的恢复浮标
+                // 4. 清屏状态下轻巧的恢复浮标 (严格对齐用户要求：位于右上角)
                 if isCleanScreen {
                     cleanScreenWakeButton
+                }
+                
+                // 5. 横屏状态下左上角常驻返回按钮 (解决横屏无法返回上个页面问题)
+                if isLandscape {
+                    VStack {
+                        HStack {
+                            Button(action: {
+                                NikonTheme.triggerHaptic(style: .light)
+                                onExitToControl?()
+                            }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "chevron.left")
+                                        .font(.system(size: 12, weight: .bold))
+                                    Text("返回")
+                                        .font(.system(size: 12, weight: .bold))
+                                }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Color.black.opacity(0.65))
+                                .cornerRadius(12)
+                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.2), lineWidth: 0.8))
+                            }
+                            .padding(.leading, 24)
+                            .padding(.top, 24)
+                            
+                            Spacer()
+                        }
+                        Spacer()
+                    }
                 }
             }
         }
@@ -533,10 +566,9 @@ public struct LiveViewMonitorView: View {
         }
     }
     
-    // MARK: - 清屏状态下屏幕角落淡雅唤醒浮标
+    // MARK: - 清屏状态下屏幕角落淡雅唤醒浮标 (严格对齐用户要求：位于右上角)
     private var cleanScreenWakeButton: some View {
         VStack {
-            Spacer()
             HStack {
                 Spacer()
                 Button(action: {
@@ -549,18 +581,19 @@ public struct LiveViewMonitorView: View {
                         Image(systemName: "eye.fill")
                         Text("恢复显示")
                     }
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.system(size: 12, weight: .bold))
                     .foregroundColor(.white)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
                     .background(Color.black.opacity(0.75))
                     .cornerRadius(18)
-                    .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(0.25), lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: 18).stroke(NikonTheme.accentBlue, lineWidth: 1.2))
                     .shadow(color: .black.opacity(0.4), radius: 6)
                 }
-                .padding(.trailing, 20)
-                .padding(.bottom, 92)
+                .padding(.trailing, 24)
+                .padding(.top, 24)
             }
+            Spacer()
         }
     }
     
