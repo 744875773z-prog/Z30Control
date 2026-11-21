@@ -53,6 +53,11 @@ public struct CameraMediaItem: Identifiable, Equatable {
     /// 文件名即查找键；nil 表示 Wi-Fi PTP/IP 来源。
     public var usbFilename: String?
 
+    /// v1.0.14：PTP 对象句柄（仅 PTP 兜底列出来的 USB 项目有值）。
+    /// ICC 目录列出来的项目 id 是文件名哈希，不是句柄，下载失败时不能
+    /// 拿它当句柄去取原图；有 ptpHandle 的项目才能走 PTP 兜底下载。
+    public var ptpHandle: UInt32?
+
     public init(
         id: UInt32,
         filename: String,
@@ -63,7 +68,8 @@ public struct CameraMediaItem: Identifiable, Equatable {
         thumbData: Data? = nil,
         isDownloaded: Bool = false,
         burstCount: Int? = nil,
-        usbFilename: String? = nil
+        usbFilename: String? = nil,
+        ptpHandle: UInt32? = nil
     ) {
         self.id = id
         self.filename = filename
@@ -75,6 +81,7 @@ public struct CameraMediaItem: Identifiable, Equatable {
         self.isDownloaded = isDownloaded
         self.burstCount = burstCount
         self.usbFilename = usbFilename
+        self.ptpHandle = ptpHandle
     }
     
     /// 友好的文件大小文本 (例如 "14.8 MB")

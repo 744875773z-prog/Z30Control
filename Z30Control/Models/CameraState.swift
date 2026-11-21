@@ -9,11 +9,36 @@ import Foundation
 import Combine
 
 /// 曝光模式
+/// v1.0.14：补上 AUTO 和 U1/U2/U3。0x500E 的标准值是 1=M、2=P、3=A、4=S；
+/// AUTO/U1/U2/U3 是尼康厂商值，按尼康厂商区 0x8010 起排推断为
+/// 0x8010=AUTO、0x8011=U1、0x8012=U2、0x8013=U3（白平衡的厂商值
+/// 0x8010/0x8011 已在开源项目里证实是这个区段）。真机拨盘验证中：
+/// 若某档显示成原始值（如 0x8014），把控制页诊断行的原始值发回来再改。
 public enum ExposureMode: String, CaseIterable {
     case manual = "M 手动"
     case aperturePriority = "A 光圈优先"
     case shutterPriority = "S 快门优先"
     case program = "P 自动"
+    case auto = "AUTO 自动"
+    case user1 = "U1"
+    case user2 = "U2"
+    case user3 = "U3"
+    case unknown = "未知"
+
+    /// 模式药丸上显示的短标签（AUTO/U1/U2/U3 不能只取首字母，会和 A 档撞）
+    public var shortLabel: String {
+        switch self {
+        case .manual: return "M"
+        case .aperturePriority: return "A"
+        case .shutterPriority: return "S"
+        case .program: return "P"
+        case .auto: return "AUTO"
+        case .user1: return "U1"
+        case .user2: return "U2"
+        case .user3: return "U3"
+        case .unknown: return "?"
+        }
+    }
 }
 
 /// 对焦模式
@@ -95,6 +120,8 @@ public final class CameraState: ObservableObject {
     @Published public var isAutoISO: Bool = false
     
     @Published public var exposureMode: ExposureMode = .manual
+    /// 最近一次从相机读到的 0x500E 原始值（模式识别不出来时，界面显示这个值，方便对表）
+    @Published public var exposureModeRaw: UInt16 = 0
     @Published public var whiteBalance: WhiteBalanceMode = .auto
     @Published public var meteringMode: MeteringMode = .matrix
     @Published public var exposureCompensation: String = "--"

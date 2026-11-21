@@ -33,8 +33,13 @@ public struct LiveViewMonitorView: View {
     @State private var isCapturing = false
     @State private var showingWiredHelp = false
     
-    // 参数选择 Sheet
+    // 参数选择面板（v1.0.14：之前是系统 ActionSheet，iOS 27 上弹出后被底栏
+    // 挡住大半、点不到值。现在改成页内自己的底部面板，永远在底栏上面。）
     @State private var activeParamPicker: String? = nil
+    // v1.0.14：取景画面铺满方式。默认满屏（画面铺满整个视口，两边裁一点），
+    // 留白问题就是这么来的——之前是完整画面，3:2 的帧在竖屏手机上天然
+    // 上下各留一条黑边。想看完整画面点右上角切回“完整”。
+    @State private var isFillScreen = true
     
     var onExitToControl: (() -> Void)? = nil
     
@@ -60,7 +65,13 @@ public struct LiveViewMonitorView: View {
                 } else {
                     portraitProHUD
                 }
-                
+
+                // 3b. v1.0.14：参数选择面板（页内底部面板，不走系统 ActionSheet，
+                // 永远浮在底栏上面，不会被挡住）。点遮罩或 × 关闭，可连续点多个值。
+                if let picker = activeParamPicker, !isCleanScreen {
+                    paramPickerPanel(for: picker)
+                }
+
                 // 4. 清屏状态下轻巧的恢复浮标 (严格对齐用户要求：位于右上角)
                 if isCleanScreen {
                     cleanScreenWakeButton
@@ -99,12 +110,6 @@ public struct LiveViewMonitorView: View {
         }
         .sheet(isPresented: $showingWiredHelp) {
             wiredConnectionGuidanceSheet
-        }
-        .actionSheet(item: Binding<ActionSheetItem?>(
-            get: { activeParamPicker.map { ActionSheetItem(id: $0) } },
-            set: { activeParamPicker = $0?.id }
-        )) { item in
-            makeParamActionSheet(for: item.id)
         }
         .onAppear {
             // v1.0.3：之前这里只启动 USB 取景，Wi-Fi（PTP/IP）连上后从不发
@@ -173,17 +178,11 @@ public struct LiveViewMonitorView: View {
                 // 1. 核心画面渲染层 (优先渲染真实视频流 / 最新快门成片 / 光学景深取景底图)
                 Group {
                     if let frameImg = streamService.currentFrame?.image {
-                        Image(uiImage: frameImg)
-                            .resizable()
-                            .scaledToFit()
+                        liveViewImage(frameImg)
                     } else if let usbLiveImg = usbCamera.currentLiveViewImage {
-                        Image(uiImage: usbLiveImg)
-                            .resizable()
-                            .scaledToFit()
+                        liveViewImage(usbLiveImg)
                     } else if let lastPhoto = usbCamera.lastCapturedPhoto {
-                        Image(uiImage: lastPhoto)
-                            .resizable()
-                            .scaledToFit()
+                        liveViewImage(lastPhoto)
                             .overlay(
                                 VStack {
                                     Spacer()
@@ -265,6 +264,28 @@ public struct LiveViewMonitorView: View {
         }
     }
     
+    // MARK: - v1.0.14：取景画面铺满方式
+    /// 满屏：画面铺满整个视口（两边裁一点），上下不再留黑边——默认就是这个，
+    /// 之前完整画面时 3:2 的帧在竖屏手机上天然上下各留一条大黑边。
+    /// 完整：整帧都看得见，画面顶到 HUD 下面（不再垂直居中留两条黑边）。
+    private func liveViewImage(_ img: UIImage) -> some View {
+        Group {
+            if isFillScreen {
+                Image(uiImage: img)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                VStack(spacing: 0) {
+                    Spacer().frame(height: 200)
+                    Image(uiImage: img)
+                        .resizable()
+                        .scaledToFit()
+                    Spacer()
+                }
+            }
+        }
+    }
+
     // MARK: - 真实拟真光学取景底图 (消除死黑画面)
     private func photographicLiveViewBackground(size: CGSize) -> some View {
         ZStack {
@@ -426,8 +447,16 @@ public struct LiveViewMonitorView: View {
                 }
                 
                 Spacer()
-                
+
                 if !isCleanScreen {
+                    // v1.0.14：本次拍摄缩略图条——之前画面和底栏之间是一大块纯黑
+                    // 空地。现在拍过的照片直接出现在这里，点一张就全屏回看。
+                    if !usbCamera.sessionCapturedPhotos.isEmpty {
+                        recentShotsStrip
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 8)
+                    }
+
                     // 底部 3D LUT 胶片模拟滤镜条
                     lutFilterSelectorStrip
                         .padding(.horizontal, 12)
@@ -619,6 +648,25 @@ public struct LiveViewMonitorView: View {
                 }
             }
             
+            // v1.0.14：满屏 / 完整 切换。满屏铺满视口（两边裁一点），
+            // 完整显示整帧（上下会有黑边）。默认满屏。
+            Button(action: {
+                NikonTheme.triggerHaptic(style: .light)
+                withAnimation(.easeInOut(duration: 0.2)) { isFillScreen.toggle() }
+            }) {
+                HStack(spacing: 4) {
+                    Image(systemName: isFillScreen ? "arrow.up.left.and.arrow.down.right" : "arrow.down.right.and.arrow.up.left")
+                        .font(.system(size: 10, weight: .bold))
+                    Text(isFillScreen ? "满屏" : "完整")
+                        .font(.system(size: 11, weight: .bold))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .background(Color.black.opacity(0.6))
+                .cornerRadius(12)
+            }
+
             // USB-C 有线直连指引药丸按钮
             Button(action: {
                 NikonTheme.triggerHaptic(style: .light)
@@ -677,9 +725,10 @@ public struct LiveViewMonitorView: View {
     // MARK: - 次级参数展开抽屉 (白平衡、测光、EV、格式等)
     private var expandedSpecsStrip: some View {
         HStack(spacing: 6) {
-            hudParamPill(title: "模式", value: cameraState.exposureMode.rawValue.prefix(1).description, isActionable: true) {
-                activeParamPicker = "mode"
-            }
+            // v1.0.14：模式只显示不点——0x500E 在尼康上是只读的（gphoto2
+            // 写它会被相机拒绝），模式只能转机身拨盘。AUTO/U1/U2/U3 现在
+            // 都能认出来了（短标签，不会和 A 档撞）；认不出来的显示原始值。
+            hudParamPill(title: "模式", value: modeDisplayText, isActionable: false)
             hudParamPill(title: "白平衡", value: cameraState.whiteBalance.rawValue.components(separatedBy: " ").first ?? "自动", isActionable: true) {
                 activeParamPicker = "wb"
             }
@@ -689,7 +738,76 @@ public struct LiveViewMonitorView: View {
             }
         }
     }
+
+    /// 模式药丸显示：认得出的显示短标签（AUTO/U1/U2/U3），
+    /// 认不出的显示原始值（如 0x8014），方便对表修正。
+    private var modeDisplayText: String {
+        if cameraState.exposureMode == .unknown {
+            return String(format: "0x%04X", cameraState.exposureModeRaw)
+        }
+        return cameraState.exposureMode.shortLabel
+    }
     
+    // MARK: - v1.0.14：本次拍摄缩略图条（点一张全屏回看）
+    private var recentShotsStrip: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text("本次拍摄 \(usbCamera.sessionCapturedPhotos.count) 张")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.white)
+                Spacer()
+                if cameraState.storageKnown {
+                    Text("卡剩余 \(String(format: "%.1f", max(cameraState.cardTotalGB - cameraState.cardUsedGB, 0))) GB")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.white.opacity(0.6))
+                }
+                if cameraState.batteryKnown {
+                    Text("电量 \(cameraState.batteryPercentage)%")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.white.opacity(0.6))
+                }
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Array(usbCamera.sessionCapturedPhotos.enumerated()), id: \.element.id) { _, item in
+                        Button(action: {
+                            NikonTheme.triggerHaptic(style: .light)
+                            // 点缩略图就全屏回看这张（复用拍完的即时回放浮层）
+                            if let img = item.image {
+                                usbCamera.lastCapturedPhoto = img
+                                usbCamera.lastCapturedFilename = item.filename
+                            }
+                        }) {
+                            Group {
+                                if let img = item.image {
+                                    Image(uiImage: img)
+                                        .resizable()
+                                        .scaledToFill()
+                                } else {
+                                    Color.white.opacity(0.15)
+                                        .overlay(
+                                            Image(systemName: "photo")
+                                                .foregroundColor(.white.opacity(0.6))
+                                        )
+                                }
+                            }
+                            .frame(width: 64, height: 48)
+                            .cornerRadius(8)
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.25), lineWidth: 0.8))
+                            .clipped()
+                        }
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.black.opacity(0.6))
+        .cornerRadius(14)
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.12), lineWidth: 0.8))
+    }
+
     // MARK: - 3D LUT 胶片模拟滤镜水平滚轴
     private var allDisplayFilters: [LUTFilter] {
         return LUTFilter.builtinPresets + LUTStorageManager.shared.customFilters
@@ -851,8 +969,12 @@ public struct LiveViewMonitorView: View {
     // M 挡快门/光圈/ISO 全可调（没有曝光补偿）；A 挡只能调光圈；S 挡只能调快门；
     // P 挡快门光圈都由相机自动；ISO 在自动 ISO 时由相机定，手动 ISO 时可调。
     // 可调的药丸显示蓝色、点得开；不可调的显示白色、点不开。
+    // v1.0.14：AUTO 档相机全锁，四个参数都不能调；U1/U2/U3 槽里存的是哪档
+    // （P/S/A/M）读不出来，先都放开让点，相机不接受的设置会失败回滚。
     private func isParamEditable(_ param: String) -> Bool {
         switch cameraState.exposureMode {
+        case .auto:
+            return false
         case .manual:
             if param == "ev" { return false }
             if param == "iso" { return !cameraState.isAutoISO }
@@ -869,6 +991,8 @@ public struct LiveViewMonitorView: View {
             if param == "ev" { return true }
             if param == "iso" { return !cameraState.isAutoISO }
             return false
+        case .user1, .user2, .user3, .unknown:
+            return true
         }
     }
 
@@ -1186,93 +1310,187 @@ public struct LiveViewMonitorView: View {
     }
 
     // MARK: - 参数选择器 ActionSheet 映射
-    private func makeParamActionSheet(for param: String) -> ActionSheet {
+    // MARK: - v1.0.14：参数选择面板（页内底部面板，替代系统 ActionSheet）
+    /// 之前是系统 ActionSheet，iOS 27 上弹出后只露一条边在底栏上面、
+    /// 点不到值。现在是页内自己的面板：底部留出玻璃底栏的高度，永远
+    /// 在底栏上面；点一个值就下发一个，不关闭，方便连续试；点遮罩或 × 关闭。
+    private func paramPickerPanel(for param: String) -> some View {
+        VStack(spacing: 0) {
+            // 遮罩：点空白处关闭
+            Color.black.opacity(0.35)
+                .onTapGesture {
+                    withAnimation(.easeInOut(duration: 0.15)) { activeParamPicker = nil }
+                }
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text(paramPickerTitle(for: param))
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.white)
+                    Spacer()
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.15)) { activeParamPicker = nil }
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 20))
+                            .foregroundColor(.white.opacity(0.7))
+                    }
+                }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(paramOptions(for: param), id: \.self) { value in
+                            Button(action: {
+                                NikonTheme.triggerHaptic(style: .light)
+                                applyParamValue(param: param, value: value)
+                            }) {
+                                Text(value)
+                                    .font(.system(size: 14, weight: .bold, design: .monospaced))
+                                    .foregroundColor(isCurrentParamValue(param: param, value: value) ? .black : .white)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 10)
+                                    .background(isCurrentParamValue(param: param, value: value) ? NikonTheme.accentBlue : Color.white.opacity(0.12))
+                                    .cornerRadius(12)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 2)
+                }
+            }
+            .padding(14)
+            .background(Color(red: 0.12, green: 0.12, blue: 0.14))
+            .cornerRadius(18)
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(0.15), lineWidth: 0.8))
+            .padding(.horizontal, 12)
+            // 底栏上面留出玻璃底栏的高度，别被挡住
+            .padding(.bottom, 110)
+        }
+        .ignoresSafeArea()
+    }
+
+    private func paramPickerTitle(for param: String) -> String {
+        switch param {
+        case "shutter": return "快门速度"
+        case "aperture": return "光圈"
+        case "iso": return "感光度 ISO"
+        case "ev": return "曝光补偿 (± EV)"
+        case "wb": return "白平衡"
+        default: return "设置"
+        }
+    }
+
+    private func paramOptions(for param: String) -> [String] {
         switch param {
         case "shutter":
-            let speeds = ["1/8000", "1/4000", "1/2000", "1/1000", "1/500", "1/250", "1/125", "1/60", "1/30", "1/15", "1/4", "1s", "2s"]
-            return ActionSheet(
-                title: Text("调节快门速度 (Shutter Speed)"),
-                message: Text("通过 PTP 实时下发至机身硬件"),
-                buttons: speeds.map { s in
-                    .default(Text(s)) {
-                        guard let raw = encodeShutter(s) else { return }
-                        let old = cameraState.shutterSpeed
-                        setExposureProp(code: 0x500D, value: Data(raw.littleEndianBytes), apply: {
-                            cameraState.shutterSpeed = s
-                        }, revert: {
-                            cameraState.shutterSpeed = old
-                        })
-                    }
-                } + [.cancel(Text("取消"))]
-            )
+            return ["1/8000", "1/4000", "1/2000", "1/1000", "1/500", "1/250", "1/125", "1/60", "1/30", "1/15", "1/4", "1s", "2s"]
         case "aperture":
-            let aps = ["f/1.8", "f/2.8", "f/3.5", "f/4.0", "f/5.6", "f/8.0", "f/11", "f/16"]
-            return ActionSheet(
-                title: Text("调节镜头光圈 (Aperture)"),
-                buttons: aps.map { a in
-                    .default(Text(a)) {
-                        guard let raw = encodeAperture(a) else { return }
-                        let old = cameraState.aperture
-                        setExposureProp(code: 0x5007, value: Data(raw.littleEndianBytes), apply: {
-                            cameraState.aperture = a
-                        }, revert: {
-                            cameraState.aperture = old
-                        })
-                    }
-                } + [.cancel(Text("取消"))]
-            )
+            return ["f/1.8", "f/2.8", "f/3.5", "f/4.0", "f/5.6", "f/8.0", "f/11", "f/16"]
         case "iso":
-            let isos = ["100", "200", "400", "800", "1600", "3200", "6400", "12800", "自动 (Auto)"]
-            return ActionSheet(
-                title: Text("调节感光度 (ISO)"),
-                buttons: isos.map { iso in
-                    .default(Text(iso)) {
-                        let oldAuto = cameraState.isAutoISO
-                        let oldBase = cameraState.isoBase
-                        let oldActual = cameraState.isoActual
-                        let revertISO = {
-                            cameraState.isAutoISO = oldAuto
-                            cameraState.isoBase = oldBase
-                            cameraState.isoActual = oldActual
-                        }
-                        if iso.contains("自动") {
-                            // 0xFFFF = Auto ISO
-                            setExposureProp(code: 0x500F, value: Data(UInt16(0xFFFF).littleEndianBytes), apply: {
-                                cameraState.isAutoISO = true
-                                cameraState.isoActual = "自动"
-                            }, revert: revertISO)
-                        } else if let v = UInt16(iso) {
-                            setExposureProp(code: 0x500F, value: Data(v.littleEndianBytes), apply: {
-                                cameraState.isAutoISO = false
-                                cameraState.isoBase = iso
-                                cameraState.isoActual = iso
-                            }, revert: revertISO)
-                        }
-                    }
-                } + [.cancel(Text("取消"))]
-            )
+            return ["100", "200", "400", "800", "1600", "3200", "6400", "12800", "自动"]
         case "ev":
-            let evs = ["+2.0 EV", "+1.0 EV", "+0.7 EV", "+0.3 EV", "0 EV", "-0.3 EV", "-0.7 EV", "-1.0 EV", "-2.0 EV"]
-            return ActionSheet(
-                title: Text("曝光补偿 (± EV)"),
-                buttons: evs.map { ev in
-                    .default(Text(ev)) {
-                        guard let raw = encodeEV(ev) else { return }
-                        let old = cameraState.exposureCompensation
-                        setExposureProp(code: 0x5010, value: Data(raw.littleEndianBytes), apply: {
-                            cameraState.exposureCompensation = ev
-                        }, revert: {
-                            cameraState.exposureCompensation = old
-                        })
-                    }
-                } + [.cancel(Text("取消"))]
-            )
+            return ["+2.0 EV", "+1.0 EV", "+0.7 EV", "+0.3 EV", "0 EV", "-0.3 EV", "-0.7 EV", "-1.0 EV", "-2.0 EV"]
+        case "wb":
+            return ["自动", "晴天", "阴天", "阴影", "白炽灯", "荧光灯"]
         default:
-            return ActionSheet(title: Text("设置"), buttons: [.cancel(Text("关闭"))])
+            return []
+        }
+    }
+
+    private func isCurrentParamValue(param: String, value: String) -> Bool {
+        switch param {
+        case "shutter": return cameraState.shutterSpeed == value
+        case "aperture": return cameraState.aperture == value
+        case "iso":
+            if value == "自动" { return cameraState.isAutoISO }
+            return !cameraState.isAutoISO && cameraState.isoActual == value
+        case "ev": return cameraState.exposureCompensation == value
+        case "wb": return cameraState.whiteBalance.rawValue.components(separatedBy: " ").first == value
+        default: return false
+        }
+    }
+
+    /// 点一个值就下发一个（乐观更新，相机拒绝则恢复旧值，和之前一样）。
+    private func applyParamValue(param: String, value: String) {
+        switch param {
+        case "shutter":
+            guard let raw = encodeShutter(value) else { return }
+            let old = cameraState.shutterSpeed
+            setExposureProp(code: 0x500D, value: Data(raw.littleEndianBytes), apply: {
+                cameraState.shutterSpeed = value
+            }, revert: {
+                cameraState.shutterSpeed = old
+            })
+        case "aperture":
+            guard let raw = encodeAperture(value) else { return }
+            let old = cameraState.aperture
+            setExposureProp(code: 0x5007, value: Data(raw.littleEndianBytes), apply: {
+                cameraState.aperture = value
+            }, revert: {
+                cameraState.aperture = old
+            })
+        case "iso":
+            let oldAuto = cameraState.isAutoISO
+            let oldBase = cameraState.isoBase
+            let oldActual = cameraState.isoActual
+            let revertISO = {
+                cameraState.isAutoISO = oldAuto
+                cameraState.isoBase = oldBase
+                cameraState.isoActual = oldActual
+            }
+            if value == "自动" {
+                // 0xFFFF = Auto ISO
+                setExposureProp(code: 0x500F, value: Data(UInt16(0xFFFF).littleEndianBytes), apply: {
+                    cameraState.isAutoISO = true
+                    cameraState.isoActual = "自动"
+                }, revert: revertISO)
+            } else if let v = UInt16(value) {
+                setExposureProp(code: 0x500F, value: Data(v.littleEndianBytes), apply: {
+                    cameraState.isAutoISO = false
+                    cameraState.isoBase = value
+                    cameraState.isoActual = value
+                }, revert: revertISO)
+            }
+        case "ev":
+            guard let raw = encodeEV(value) else { return }
+            let old = cameraState.exposureCompensation
+            setExposureProp(code: 0x5010, value: Data(raw.littleEndianBytes), apply: {
+                cameraState.exposureCompensation = value
+            }, revert: {
+                cameraState.exposureCompensation = old
+            })
+        case "wb":
+            // 白平衡 0x5005：标准值 自动=2、晴天=4、荧光灯=5、白炽灯=6；
+            // 尼康厂商值 阴天=0x8010、阴影=0x8011（开源项目 ptp_misc.cpp 的尼康表证实）。
+            guard let raw = encodeWhiteBalance(value) else { return }
+            let old = cameraState.whiteBalance
+            let newMode: WhiteBalanceMode
+            switch value {
+            case "晴天": newMode = .daylight
+            case "阴天": newMode = .cloudy
+            case "阴影": newMode = .shade
+            case "白炽灯": newMode = .incandescent
+            case "荧光灯": newMode = .fluorescent
+            default: newMode = .auto
+            }
+            setExposureProp(code: 0x5005, value: Data(raw.littleEndianBytes), apply: {
+                cameraState.whiteBalance = newMode
+            }, revert: {
+                cameraState.whiteBalance = old
+            })
+        default:
+            break
+        }
+    }
+
+    /// “晴天”→4、“阴天”→0x8010、“阴影”→0x8011（见 applyParamValue 里的注释）
+    private func encodeWhiteBalance(_ s: String) -> UInt16? {
+        switch s {
+        case "自动": return 2
+        case "晴天": return 4
+        case "荧光灯": return 5
+        case "白炽灯": return 6
+        case "阴天": return 0x8010
+        case "阴影": return 0x8011
+        default: return nil
         }
     }
 }
 
-private struct ActionSheetItem: Identifiable {
-    let id: String
-}

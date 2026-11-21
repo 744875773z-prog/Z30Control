@@ -158,17 +158,37 @@ public final class MediaSyncService: ObservableObject {
         // v1.0.4：USB 来源走 ImageCaptureCore 下载（之前只认 PTP 句柄，USB 的 item 根本下不下来）
         if let usbName = item.usbFilename {
             UsbCameraManager.shared.downloadUSBFile(named: usbName) { [weak self] data in
-                guard let self = self, let data = data else { completion(false); return }
-                self.saveDataToPhotosOrFiles(data, filename: item.filename) { ok in
-                    if ok {
-                        DispatchQueue.main.async {
-                            if let idx = self.mediaItems.firstIndex(where: { $0.id == item.id }) {
-                                self.mediaItems[idx].isDownloaded = true
+                guard let self = self else { completion(false); return }
+                // v1.0.14：ICC 目录里没有这张（PTP 兜底列出来的），改按句柄走 PTP 取原图
+                if let data = data {
+                    self.saveDataToPhotosOrFiles(data, filename: item.filename) { ok in
+                        if ok {
+                            DispatchQueue.main.async {
+                                if let idx = self.mediaItems.firstIndex(where: { $0.id == item.id }) {
+                                    self.mediaItems[idx].isDownloaded = true
+                                }
+                                self.stats.completedCount += 1
                             }
-                            self.stats.completedCount += 1
+                        }
+                        completion(ok)
+                    }
+                } else if let handle = item.ptpHandle {
+                    // 只有 PTP 兜底列出来的项目才有真句柄，拿它取原图；
+                    // ICC 目录的项目没有句柄，ICC 下不来就真的下不来。
+                    UsbCameraManager.shared.downloadRawObjectData(handle: handle, filename: item.filename) { [weak self] rawData in
+                        guard let self = self, let rawData = rawData else { completion(false); return }
+                        self.saveDataToPhotosOrFiles(rawData, filename: item.filename) { ok in
+                            if ok {
+                                DispatchQueue.main.async {
+                                    if let idx = self.mediaItems.firstIndex(where: { $0.id == item.id }) {
+                                        self.mediaItems[idx].isDownloaded = true
+                                    }
+                                    self.stats.completedCount += 1
+                                }
+                            }
+                            completion(ok)
                         }
                     }
-                    completion(ok)
                 }
             }
             return
@@ -227,6 +247,12 @@ public final class MediaSyncService: ObservableObject {
     /// USB：把 ImageCaptureCore 的卡目录映射成图库列表
     public func refreshFromUSB() {
         let files = UsbCameraManager.shared.usbMediaFiles
+        // v1.0.14：ICC 目录还没到（刚连上、目录投递慢）时，图库之前直接显示
+        // 0 张。目录为空就改走 PTP 直接列卡，不用等目录。
+        guard !files.isEmpty else {
+            refreshFromUSBViaPTP()
+            return
+        }
         let items: [CameraMediaItem] = files.map { file in
             let name = file.name ?? "DSC_NEW.JPG"
             let ext = (name as NSString).pathExtension.lowercased()
@@ -250,6 +276,38 @@ public final class MediaSyncService: ObservableObject {
             self.hasMorePages = true
             self.mediaItems.removeAll()
             self.loadNextPage()
+        }
+    }
+
+    /// USB 图库兜底：ICC 目录为空时，用 PTP 直接列卡里的文件。
+    /// 这里的 item.id 就是 PTP 对象句柄，下载时 ICC 找不到就走 PTP 取原图。
+    private func refreshFromUSBViaPTP() {
+        guard !isSyncingIndex else { return }
+        isSyncingIndex = true
+        UsbCameraManager.shared.fetchCardItemsViaPTP { [weak self] entries in
+            guard let self = self else { return }
+            let items: [CameraMediaItem] = entries.map { e in
+                let ext = (e.filename as NSString).pathExtension.lowercased()
+                return CameraMediaItem(
+                    id: e.handle,
+                    filename: e.filename,
+                    sizeBytes: e.sizeBytes,
+                    format: Self.format(for: ext),
+                    captureDate: Date(),
+                    isProtected: false,
+                    usbFilename: e.filename,
+                    ptpHandle: e.handle
+                )
+            }
+            DispatchQueue.main.async {
+                self.fetchedItems = items
+                self.isSyncingIndex = false
+                self.stats.indexedTotalFiles = items.count
+                self.currentPage = 0
+                self.hasMorePages = true
+                self.mediaItems.removeAll()
+                self.loadNextPage()
+            }
         }
     }
 

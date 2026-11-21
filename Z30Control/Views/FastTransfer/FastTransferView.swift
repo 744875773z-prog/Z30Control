@@ -64,7 +64,36 @@ public struct FastTransferView: View {
                     .background(NikonTheme.accentBlueLight)
                     .cornerRadius(8)
                     
-                    // 3. 照片展示区：无照片时显示纯净等待拍摄，有照片时显示真实最新成片
+                    // 3. 速传诊断行 + 手动重新扫描（v1.0.14：之前速传空了没有任何
+                    // 原因可看，也没有手动补救的入口。现在诊断直接显示在这里，
+                    // 拍完没进来就点“重新扫描卡内照片”，直接问卡里最新的 5 张。）
+                    if usbCamera.isUsbConnected {
+                        HStack(spacing: 8) {
+                            Text("诊断：\(usbCamera.ptpDiagnostic.isEmpty ? "就绪" : usbCamera.ptpDiagnostic)")
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(NikonTheme.textSecondary)
+                                .lineLimit(2)
+                            Spacer()
+                            Button(action: {
+                                NikonTheme.triggerHaptic(style: .light)
+                                usbCamera.rescanCardForNewPhotos()
+                            }) {
+                                Text("重新扫描卡内照片")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(NikonTheme.accentBlue)
+                                    .cornerRadius(12)
+                            }
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(NikonTheme.bgSubtle)
+                        .cornerRadius(8)
+                    }
+
+                    // 4. 照片展示区：无照片时显示纯净等待拍摄，有照片时显示真实最新成片
                     if usbCamera.sessionCapturedPhotos.isEmpty {
                         emptyWaitingCaptureView
                     } else {

@@ -238,6 +238,10 @@ public final class UsbCameraManager: NSObject, ObservableObject,
         DispatchQueue.main.async { [weak self] in
             // v1.0.4：USB 卡内目录喂给图库（之前图库只走 Wi-Fi，USB 下永远 0 张）
             self?.usbMediaFiles = files.sorted(by: { ($0.name ?? "") > ($1.name ?? "") })
+            // v1.0.14：目录到了才重建图库列表——之前只改了 usbMediaFiles，
+            // 图库的 mediaItems 没人重建，用户在图库页看到的永远是打开时那份
+            // （常常是空的），目录晚到了也不会自己出现。
+            MediaSyncService.shared.refreshFromUSB()
         }
     }
 
@@ -253,6 +257,9 @@ public final class UsbCameraManager: NSObject, ObservableObject,
                     all.insert(f, at: 0)
                 }
                 self.usbMediaFiles = all
+                // v1.0.14：新照片进了目录，图库列表也要跟着重建，否则图库页
+                // 还是旧的那份，看不到刚拍的。
+                MediaSyncService.shared.refreshFromUSB()
             }
         }
         for item in items {
@@ -315,7 +322,11 @@ public final class UsbCameraManager: NSObject, ObservableObject,
                     didAddDownloadNames.remove(name)
                     setDiagnostic("速传下载失败：\(error.localizedDescription)，1.5s 后重试")
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-                        self?.downloadUSBFile(named: name) { _ in }
+                        // v1.0.14：ICC 重试也可能失败（目录里根本没这张），
+                        // 那就走 PTP 直接按文件名在卡里找，找到就下原图。
+                        self?.downloadUSBFile(named: name) { [weak self] data in
+                            if data == nil { self?.rescanCardForNewPhotos() }
+                        }
                     }
                 } else {
                     didAddDownloadNames.remove(name)
@@ -411,16 +422,16 @@ public final class UsbCameraManager: NSObject, ObservableObject,
         return (text, offset + 1 + byteCount)
     }
 
-    /// App 快门成功后 2.5s 查一次新照片。didAdd 已经处理过的跳过；
-    /// 没处理的，文件名能在 ICC 目录里找到就走 ICC 下载，找不到就直接 PTP 取原图。
+    /// App 快门成功后查两次新照片（2.5s 和 6s）。v1.0.14：之前只查一次，
+    /// 相机写卡慢一点（NEF、大卡、连拍后）就查不到，速传永远空着。
     private func scheduleCaptureCheck() {
         captureCheckWorkItem?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.checkForNewCapture() }
+        let work = DispatchWorkItem { [weak self] in self?.checkForNewCapture(attempt: 1) }
         captureCheckWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5, execute: work)
     }
 
-    private func checkForNewCapture() {
+    private func checkForNewCapture(attempt: Int = 1) {
         guard isUsbConnected else {
             DispatchQueue.main.async { [weak self] in self?.resumeLiveViewFetching() }
             return
@@ -428,6 +439,7 @@ public final class UsbCameraManager: NSObject, ObservableObject,
         // 拍前快照没读到就别复查了，只靠 didAdd，免得把整张卡都当成新照片
         guard preCaptureSnapshotOK else {
             print("[UsbCameraManager] 拍后复查跳过：拍前快照未读到")
+            setDiagnostic("拍后复查跳过：拍前卡快照没读到，只靠相机推送")
             DispatchQueue.main.async { [weak self] in self?.resumeLiveViewFetching() }
             return
         }
@@ -435,13 +447,23 @@ public final class UsbCameraManager: NSObject, ObservableObject,
             guard let self = self else { return }
             guard let handles = handles else {
                 print("[UsbCameraManager] 拍后复查：读句柄失败，只靠 didAdd")
+                setDiagnostic("拍后复查：读卡句柄失败，只靠相机推送")
                 DispatchQueue.main.async { self.resumeLiveViewFetching() }
                 return
             }
             let newHandles = handles.filter { !self.preCaptureHandles.contains($0) }
             guard !newHandles.isEmpty else {
                 print("[UsbCameraManager] 拍后复查：卡里没有新对象（didAdd 已处理或相机未写入）")
-                DispatchQueue.main.async { self.resumeLiveViewFetching() }
+                if attempt == 1 {
+                    // 第一次没查到不等于没有——相机可能还没写完卡，3.5s 后再查一次
+                    setDiagnostic("拍后复查：2.5s 未见新照片，6s 后再查一次")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { [weak self] in
+                        self?.checkForNewCapture(attempt: 2)
+                    }
+                } else {
+                    setDiagnostic("拍后复查：卡里没有新对象（didAdd 已处理或相机未写入）")
+                    DispatchQueue.main.async { self.resumeLiveViewFetching() }
+                }
                 return
             }
             print("[UsbCameraManager] 拍后复查：发现 \(newHandles.count) 个新对象句柄")
@@ -474,16 +496,76 @@ public final class UsbCameraManager: NSObject, ObservableObject,
 
     /// ICC 目录里没有的新照片，直接 PTP GetObject 取原图字节
     private func downloadRawObject(handle: UInt32, filename: String) {
-        sendPTPDataCommand(opCode: 0x1009, params: [handle]) { [weak self] payload, _, diag in
-            guard let self = self else { return }
-            guard let payload = payload, !payload.isEmpty else {
-                self.setDiagnostic("速传取原图失败：\(diag)")
-                return
-            }
+        downloadRawObjectData(handle: handle, filename: filename) { [weak self] payload in
+            guard let self = self, let payload = payload, !payload.isEmpty else { return }
             let img = UIImage(data: payload)
             DispatchQueue.main.async {
                 self.addCapturedPhoto(image: img, filename: filename, sizeBytes: payload.count)
             }
+        }
+    }
+
+    /// v1.0.14：对外暴露的 PTP 原图下载（图库“保存原图”兜底用）。
+    /// ICC 目录里找不到文件时，图库不再直接报失败，改走这条路按句柄取原图。
+    public func downloadRawObjectData(handle: UInt32, filename: String, completion: @escaping (Data?) -> Void) {
+        sendPTPDataCommand(opCode: 0x1009, params: [handle]) { [weak self] payload, _, diag in
+            guard let self = self else { completion(nil); return }
+            guard let payload = payload, !payload.isEmpty else {
+                self.setDiagnostic("速传取原图失败：\(diag)")
+                completion(nil)
+                return
+            }
+            completion(payload)
+        }
+    }
+
+    /// v1.0.14：手动重新扫描——速传页的“重新扫描卡内照片”按钮和
+    /// didAdd 下载失败的兜底都走这里。不依赖拍前快照：直接问卡里最新
+    /// 的 5 个对象，文件名还没进速传的就下载（机身快门拍的也一样能捡回来）。
+    public func rescanCardForNewPhotos() {
+        guard isUsbConnected else { return }
+        setDiagnostic("正在重新扫描卡内照片…")
+        fetchAllObjectHandles { [weak self] handles in
+            guard let self = self, let handles = handles, !handles.isEmpty else {
+                self?.setDiagnostic("重新扫描：读卡句柄失败")
+                return
+            }
+            // 句柄按拍摄顺序递增，最大的 5 个就是最新的 5 张
+            let newest = Array(handles.sorted(by: >).prefix(5))
+            self.fetchNewCapturedFiles(handles: newest, index: 0) {
+                DispatchQueue.main.async {
+                    self.setDiagnostic("重新扫描完成：本次速传共 \(self.sessionCapturedPhotos.count) 张")
+                }
+            }
+        }
+    }
+
+    /// v1.0.14：图库兜底——ICC 目录迟迟不到时，直接用 PTP 列卡里的文件。
+    /// 返回最新在前的（句柄、文件名、字节数），最多取 300 个（串行查
+    /// GetObjectInfo，整卡几千张全查太慢；ICC 目录到了走正常路，不受此限）。
+    public func fetchCardItemsViaPTP(completion: @escaping ([(handle: UInt32, filename: String, sizeBytes: UInt64)]) -> Void) {
+        fetchAllObjectHandles { [weak self] handles in
+            guard let self = self, let handles = handles else { completion([]); return }
+            let newest = Array(handles.sorted(by: >).prefix(300))
+            self.fetchCardInfoSequentially(handles: newest, index: 0, accumulated: [], done: completion)
+        }
+    }
+
+    private func fetchCardInfoSequentially(handles: [UInt32], index: Int, accumulated: [(handle: UInt32, filename: String, sizeBytes: UInt64)], done: @escaping ([(handle: UInt32, filename: String, sizeBytes: UInt64)]) -> Void) {
+        guard index < handles.count else { done(accumulated); return }
+        let handle = handles[index]
+        sendPTPDataCommand(opCode: 0x1008, params: [handle]) { [weak self] payload, _, _ in
+            guard let self = self else { done(accumulated); return }
+            var next = accumulated
+            if let payload = payload, let filename = Self.parseObjectInfoFilename(payload), !filename.isEmpty {
+                // 标准 ObjectInfo：大小 U32 在偏移 10（模拟器简化布局也是 10）
+                var size: UInt64 = 0
+                if payload.count >= 14 {
+                    size = UInt64(UInt32(payload[10]) | (UInt32(payload[11]) << 8) | (UInt32(payload[12]) << 16) | (UInt32(payload[13]) << 24))
+                }
+                next.append((handle: handle, filename: filename, sizeBytes: size))
+            }
+            self.fetchCardInfoSequentially(handles: handles, index: index + 1, accumulated: next, done: done)
         }
     }
 
@@ -742,15 +824,24 @@ public final class UsbCameraManager: NSObject, ObservableObject,
                 print("[PTP] ISO: \(cameraState.isoActual) (原始=\(raw))")
 
             case .exposureProgramMode:
-                // UINT16: 1=M, 2=P, 3=A, 4=S
+                // UINT16：标准值 1=M、2=P、3=A、4=S；尼康厂商值 0x8010 起排
+                // 推断为 AUTO/U1/U2/U3（真机验证中，未识别的值进 .unknown，
+                // 原始值写进诊断行，方便对表修正）。
                 guard bytes.count >= 2 else { return }
                 let raw = UInt16(bytes[0]) | (UInt16(bytes[1]) << 8)
+                cameraState.exposureModeRaw = raw
                 switch raw {
                 case 1: cameraState.exposureMode = .manual
                 case 2: cameraState.exposureMode = .program
                 case 3: cameraState.exposureMode = .aperturePriority
                 case 4: cameraState.exposureMode = .shutterPriority
-                default: break
+                case 0x8010: cameraState.exposureMode = .auto
+                case 0x8011: cameraState.exposureMode = .user1
+                case 0x8012: cameraState.exposureMode = .user2
+                case 0x8013: cameraState.exposureMode = .user3
+                default:
+                    cameraState.exposureMode = .unknown
+                    setDiagnostic(String(format: "曝光模式未识别：原始值 0x%04X，请把这个值发给开发者对表", raw))
                 }
                 print("[PTP] 曝光模式: \(cameraState.exposureMode.rawValue) (原始=\(raw))")
 
@@ -887,8 +978,11 @@ public final class UsbCameraManager: NSObject, ObservableObject,
         case 4: return .daylight
         case 5: return .fluorescent
         case 6: return .incandescent
-        case 0x8010: return .shade  // Nikon 阴影
-        case 0x8011: return .cloudy // Nikon 阴天
+        // v1.0.14 更正：之前 0x8010/0x8011 写反了。开源项目 ptp_misc.cpp
+        // 的尼康表证实：0x8010=Cloudy（阴天）、0x8011=Shade（阴影）。
+        case 0x8010: return .cloudy
+        case 0x8011: return .shade
+        case 0x8012: return .customKelvin // Nikon 色温
         default: return .auto
         }
     }
