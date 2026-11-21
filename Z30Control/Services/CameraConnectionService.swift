@@ -297,7 +297,7 @@ public final class CameraConnectionService: ObservableObject, PtpIpClientDelegat
                 self.isConnecting = true
                 self.statusMessage = "正在连接 \(self.targetIP)..."
             case .handshaking:
-                self.statusMessage = "正在与 \(self.selectedModel) 进行 PTP/IP 握手..."
+                self.statusMessage = "正在握手…首次连接请在相机屏幕上按 OK 确认"
             case .connected(let cameraName, let connNum):
                 self.isConnected = true
                 self.isConnecting = false

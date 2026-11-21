@@ -181,11 +181,11 @@ public struct ConnectionWizardView: View {
                     guideStepRow(step: "2", text: "使用 USB-C 数据线将 iPhone 与相机直接连接。")
                     guideStepRow(step: "3", text: "确认相机中的【USB 数据连接】设为“MTP/PTP”。")
                 } else if connectionService.transportMode == .wifiLocal {
-                    guideStepRow(step: "2", text: "相机 MENU ➔【网络】➔【连接到电脑】，选宿舍路由器（或手机热点），和手机连上同一个 Wi-Fi。")
-                    guideStepRow(step: "3", text: "点下方“重新扫描”找相机；扫不到就手动输入相机 IP（相机菜单里能看到）。")
+                    guideStepRow(step: "2", text: "相机 MENU ➔【网络】➔【连接到智能设备】➔【Wi-Fi 连接（STA 模式）】➔ 创建配置文件，搜宿舍路由器连上（和手机同一个 Wi-Fi）。注意：不要用【连接到电脑】，那是传图给尼康电脑软件用的，第三方 App 连不上。")
+                    guideStepRow(step: "3", text: "首次连接时相机屏幕会问是否允许，在相机上按 OK；然后点下方“重新扫描”找相机，扫不到就手动输 IP。")
                 } else {
-                    guideStepRow(step: "2", text: "按相机 MENU 键 ➔【连接至智能设备】➔ 开启【Wi-Fi 连接】。")
-                    guideStepRow(step: "3", text: "在手机 Wi-Fi 列表中加入以“Z30_”开头的热点网络。")
+                    guideStepRow(step: "2", text: "相机 MENU ➔【网络】➔【连接到智能设备】➔【Wi-Fi 连接（AP 模式）】➔【建立 Wi-Fi 连接】，记下相机显示的 SSID 和密码。")
+                    guideStepRow(step: "3", text: "手机 Wi-Fi 加入那个以 Z_30_ 开头的热点；首次连接时在相机上按 OK 确认。")
                 }
             }
             .padding(14)

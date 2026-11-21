@@ -167,8 +167,9 @@ public final class PtpIpClient {
         }
         cmdConnection?.start(queue: workQueue)
 
-        // v1.0.10：8 秒还没连上就直接报失败（不走自动重连，让用户看到原因）。
-        // .connecting = TCP 还没通；.handshaking = TCP 通了但相机不回 PTP/IP 握手。
+        // v1.0.12：握手超时分两档。TCP 不通 8 秒就报失败；TCP 通了但相机
+        // 不回握手，给 30 秒——首次连接时相机要等用户在机身上按 OK 确认，
+        // 不能 8 秒就判死刑。30 秒还没回才报失败，并提示走智能设备那条路。
         workQueue.asyncAfter(deadline: .now() + 8) { [weak self] in
             guard let self = self else { return }
             guard self.connectionAttemptID == attemptID else { return } // 已是新一轮连接
@@ -177,8 +178,13 @@ public final class PtpIpClient {
                 self.disconnect(isIntentional: true)
                 self.status = .failed("连接超时：连不上 \(host):15740。请确认手机和相机在同一 Wi-Fi，且相机 Wi-Fi 已打开。")
             case .handshaking:
-                self.disconnect(isIntentional: true)
-                self.status = .failed("握手超时：已连上 \(host):15740，但相机没有回 PTP/IP 握手。请确认相机 Wi-Fi 处于「连接到计算机」模式（不是连接智能设备），或重启相机后重试。")
+                self.workQueue.asyncAfter(deadline: .now() + 22) { [weak self] in
+                    guard let self = self else { return }
+                    guard self.connectionAttemptID == attemptID else { return }
+                    guard case .handshaking = self.status else { return }
+                    self.disconnect(isIntentional: true)
+                    self.status = .failed("握手超时：已连上 \(host):15740，但相机没有回 PTP/IP 握手。请确认相机在【连接到智能设备 → Wi-Fi 连接（STA 模式）】而不是【连接到电脑】，并在相机屏幕上按 OK 确认连接。")
+                }
             default:
                 break
             }
