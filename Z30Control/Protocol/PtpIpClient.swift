@@ -308,22 +308,35 @@ public final class PtpIpClient {
     }
     
     // MARK: - 核心：TCP 流式拆包接收算法 (Stream Reassembly)
+    private enum StreamChannel {
+        case cmd
+        case event
+    }
+    
     /// 确保严格按照 PTP/IP 4字节 Header Length 接收完整的单个报文
     private func readNextCmdPacket(completion: @escaping (Data) -> Void) {
-        readPacketFromBuffer(connection: cmdConnection, buffer: &cmdReceiveBuffer, completion: completion)
+        readPacket(channel: .cmd, completion: completion)
     }
     
     private func readNextEventPacket(completion: @escaping (Data) -> Void) {
-        readPacketFromBuffer(connection: eventConnection, buffer: &eventReceiveBuffer, completion: completion)
+        readPacket(channel: .event, completion: completion)
     }
     
-    private func readPacketFromBuffer(connection: NWConnection?, buffer: inout Data, completion: @escaping (Data) -> Void) {
+    private func readPacket(channel: StreamChannel, completion: @escaping (Data) -> Void) {
+        let connection = (channel == .cmd) ? cmdConnection : eventConnection
+        var currentBuffer = (channel == .cmd) ? cmdReceiveBuffer : eventReceiveBuffer
+        
         // 1. 如果缓冲区已有至少 4 个字节，检查报文总长
-        if buffer.count >= 4 {
-            let totalLength = buffer.prefix(4).withUnsafeBytes { $0.load(as: UInt32.self) }
-            if buffer.count >= Int(totalLength) {
-                let packetData = buffer.prefix(Int(totalLength))
-                buffer.removeSubrange(0..<Int(totalLength))
+        if currentBuffer.count >= 4 {
+            let totalLength = currentBuffer.prefix(4).withUnsafeBytes { $0.load(as: UInt32.self) }
+            if currentBuffer.count >= Int(totalLength) {
+                let packetData = currentBuffer.prefix(Int(totalLength))
+                currentBuffer.removeSubrange(0..<Int(totalLength))
+                if channel == .cmd {
+                    cmdReceiveBuffer = currentBuffer
+                } else {
+                    eventReceiveBuffer = currentBuffer
+                }
                 completion(packetData)
                 return
             }
@@ -332,8 +345,12 @@ public final class PtpIpClient {
         // 2. 缓冲区不足一个完整报文，继续从 Socket 异步拉取
         connection?.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] chunk, _, _, error in
             guard let self = self, let chunk = chunk, !chunk.isEmpty, error == nil else { return }
-            buffer.append(chunk)
-            self.readPacketFromBuffer(connection: connection, buffer: &buffer, completion: completion)
+            if channel == .cmd {
+                self.cmdReceiveBuffer.append(chunk)
+            } else {
+                self.eventReceiveBuffer.append(chunk)
+            }
+            self.readPacket(channel: channel, completion: completion)
         }
     }
     
