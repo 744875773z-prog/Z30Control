@@ -36,10 +36,14 @@ jobs:
           echo "=== 正在自动生成 Xcode 原生工程 ==="
           xcodegen generate
           ls -la Z30Control.xcodeproj
+          
+          echo "=== 检查生成的 Targets 与 Schemes 清单 ==="
+          xcodebuild -list -project Z30Control.xcodeproj
 
       - name: 使用 xcodebuild 编译 iOS Release App Bundle
         run: |
           echo "=== 开始编译 iOS 原生应用包 ==="
+          set -o pipefail
           xcodebuild build \
             -project Z30Control.xcodeproj \
             -scheme Z30Control \
@@ -50,7 +54,7 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             AD_HOC_CODE_SIGNING_ALLOWED=YES \
-            COMPILER_INDEX_STORE_ENABLE=NO
+            COMPILER_INDEX_STORE_ENABLE=NO 2>&1 | tee xcodebuild_raw.log || (echo "=== 编译失败错误日志摘要 ===" && grep -E "error:|fatal|failed" xcodebuild_raw.log -B 2 -A 5 | head -n 100 && exit 1)
 
       - name: 组装与封装为标准 iOS .ipa 安装包
         run: |

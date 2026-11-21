@@ -12,6 +12,10 @@ targets:
           - "Info.plist"
     info:
       path: Z30Control/Info.plist
+    scheme:
+      build:
+        targets:
+          Z30Control: all
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.nikonpro.z30control
       INFOPLIST_FILE: Z30Control/Info.plist
