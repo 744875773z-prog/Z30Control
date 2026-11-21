@@ -43,9 +43,19 @@ public struct RootTabView: View {
     public var body: some View {
         GeometryReader { geometry in
             let isLandscape = geometry.size.width > geometry.size.height
+            let topSafeArea = geometry.safeAreaInsets.top
+            let bottomSafeArea = geometry.safeAreaInsets.bottom
             
             VStack(spacing: 0) {
-                // MARK: - 主页面分发区 (占满上方，贴合灵动岛安全区下方，绝无冗余空白)
+                // MARK: - 顶部安全区占位 (灵动岛/刘海/状态栏，避免内容与系统状态栏重叠)
+                // 仅对非全屏黑背景的页面（控制页/速传/图库）显示，实时取景页自行处理
+                if selectedTab != .liveView {
+                    Color.white
+                        .frame(height: topSafeArea)
+                        .frame(maxWidth: .infinity)
+                }
+                
+                // MARK: - 主页面分发区
                 Group {
                     switch selectedTab {
                     case .control:
@@ -64,14 +74,17 @@ public struct RootTabView: View {
                 
                 // MARK: - 底部 TabBar (绝对贴底，绝不悬空，横屏下自动隐藏)
                 if !isLandscape {
-                    pureWhiteBlueTabBar(bottomInset: geometry.safeAreaInsets.bottom)
+                    pureWhiteBlueTabBar(bottomInset: bottomSafeArea)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.white.ignoresSafeArea())
+            .background(
+                (selectedTab == .liveView ? Color.black : Color.white)
+                    .ignoresSafeArea()
+            )
         }
         .ignoresSafeArea(.keyboard, edges: .bottom)
-        .ignoresSafeArea(.container, edges: .bottom) // 允许底部背景直通屏幕物理底边缘
+        .ignoresSafeArea(.container, edges: .bottom) // 底部直通物理边缘
     }
     
     // MARK: - 纯白蓝调网页版 1:1 导航栏 (贴底无白块断层)
@@ -108,8 +121,9 @@ public struct RootTabView: View {
             }
             .padding(.horizontal, 10)
             
-            // 垫高 iPhone 16 Pro Max 底部手势横条安全区
-            Spacer().frame(height: max(bottomInset - 6, 8))
+            // 底部手势横条安全区 (贴底，不留多余空白)
+            Color.white
+                .frame(height: bottomInset)
         }
         .background(Color.white)
     }

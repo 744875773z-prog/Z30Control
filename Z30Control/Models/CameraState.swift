@@ -82,17 +82,17 @@ public final class CameraState: ObservableObject {
         return Int((cardUsedGB / cardTotalGB) * 100)
     }
     
-    // MARK: - 曝光参数仪表盘 (对齐影控台截图)
-    @Published public var shutterSpeed: String = "1/125"
-    @Published public var aperture: String = "f/4.0"
-    @Published public var isoBase: String = "100"
-    @Published public var isoActual: String = "400"
-    @Published public var isAutoISO: Bool = true
+    // MARK: - 曝光参数仪表盘 (连接前显示 --，连接后由 PTP 真实赋值)
+    @Published public var shutterSpeed: String = "--"
+    @Published public var aperture: String = "--"
+    @Published public var isoBase: String = "--"
+    @Published public var isoActual: String = "--"
+    @Published public var isAutoISO: Bool = false
     
     @Published public var exposureMode: ExposureMode = .manual
     @Published public var whiteBalance: WhiteBalanceMode = .auto
     @Published public var meteringMode: MeteringMode = .matrix
-    @Published public var exposureCompensation: String = "0 EV"
+    @Published public var exposureCompensation: String = "--"
     @Published public var focusMode: FocusMode = .afContinuous
     @Published public var afAreaMode: String = "单点 AF"
     

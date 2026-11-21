@@ -322,40 +322,43 @@ public struct LiveViewMonitorView: View {
     
     // MARK: - 竖屏专业监视器布局 (对齐网页版，可调三要素在上，不可调在下可折叠)
     private var portraitProHUD: some View {
-        VStack(spacing: 0) {
-            if !isCleanScreen {
-                // 顶部状态条与线连指引入口
-                topConnectionBanner
-                    .padding(.horizontal, 14)
-                    .padding(.top, 8)
-                    .padding(.bottom, 6)
-                
-                // 核心曝光三要素调控条 (快门、光圈、ISO)
-                coreThreeParamsHUD
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 6)
-                
-                // 次级不可调节/状态参数折叠区
-                if isShowingExpandedParams {
-                    expandedSpecsStrip
+        GeometryReader { geo in
+            let topPad = max(geo.safeAreaInsets.top, 8) // 灵动岛/状态栏安全区
+            VStack(spacing: 0) {
+                if !isCleanScreen {
+                    // 顶部状态条与线连指引入口 (顶部 padding 自动适配灵动岛高度)
+                    topConnectionBanner
+                        .padding(.horizontal, 14)
+                        .padding(.top, topPad + 4)
+                        .padding(.bottom, 6)
+                    
+                    // 核心曝光三要素调控条 (快门、光圈、ISO)
+                    coreThreeParamsHUD
                         .padding(.horizontal, 12)
                         .padding(.bottom, 6)
-                        .transition(.move(edge: .top).combined(with: .opacity))
+                    
+                    // 次级不可调节/状态参数折叠区
+                    if isShowingExpandedParams {
+                        expandedSpecsStrip
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 6)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
                 }
-            }
-            
-            Spacer()
-            
-            if !isCleanScreen {
-                // 底部 3D LUT 胶片模拟滤镜条
-                lutFilterSelectorStrip
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 8)
                 
-                // 底部综合操作台 (清屏 DISP、AF-ON、大快门环、展开参数)
-                portraitBottomControlDeck
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 88) // 预留底部 TabBar
+                Spacer()
+                
+                if !isCleanScreen {
+                    // 底部 3D LUT 胶片模拟滤镜条
+                    lutFilterSelectorStrip
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 8)
+                    
+                    // 底部综合操作台 (清屏 DISP、AF-ON、大快门环、展开参数)
+                    portraitBottomControlDeck
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 88 + max(geo.safeAreaInsets.bottom - 20, 0)) // 预留底部 TabBar + 安全区
+                }
             }
         }
     }
