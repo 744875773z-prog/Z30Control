@@ -17,6 +17,7 @@
 
 import Foundation
 import Combine
+import ImageCaptureCore
 #if canImport(Photos)
 import Photos
 #endif
@@ -154,6 +155,24 @@ public final class MediaSyncService: ObservableObject {
     
     /// 图库详情页“保存原图”调用：真实从相机下载并存入相册/文稿
     public func downloadAndSaveToPhotos(item: CameraMediaItem, completion: @escaping (Bool) -> Void) {
+        // v1.0.4：USB 来源走 ImageCaptureCore 下载（之前只认 PTP 句柄，USB 的 item 根本下不下来）
+        if let usbName = item.usbFilename {
+            UsbCameraManager.shared.downloadUSBFile(named: usbName) { [weak self] data in
+                guard let self = self, let data = data else { completion(false); return }
+                self.saveDataToPhotosOrFiles(data, filename: item.filename) { ok in
+                    if ok {
+                        DispatchQueue.main.async {
+                            if let idx = self.mediaItems.firstIndex(where: { $0.id == item.id }) {
+                                self.mediaItems[idx].isDownloaded = true
+                            }
+                            self.stats.completedCount += 1
+                        }
+                    }
+                    completion(ok)
+                }
+            }
+            return
+        }
         ptpClient.getObject(handle: item.id) { [weak self] data in
             guard let self = self, let data = data else { completion(false); return }
             self.saveDataToPhotosOrFiles(data, filename: item.filename) { ok in
@@ -196,7 +215,84 @@ public final class MediaSyncService: ObservableObject {
     
     /// 供连接成功后与图库页主动调用：刷新相机卡内文件列表
     public func refreshIndexFromCamera() {
+        // v1.0.4：USB 下图库之前永远 0 张——它只走 Wi-Fi PTP/IP。
+        // USB 时直接用 ImageCaptureCore 的卡目录。
+        if UsbCameraManager.shared.isUsbConnected {
+            refreshFromUSB()
+            return
+        }
         fetchAllObjectHandles()
+    }
+
+    /// USB：把 ImageCaptureCore 的卡目录映射成图库列表
+    public func refreshFromUSB() {
+        let files = UsbCameraManager.shared.usbMediaFiles
+        let items: [CameraMediaItem] = files.map { file in
+            let name = file.name ?? "DSC_NEW.JPG"
+            let ext = (name as NSString).pathExtension.lowercased()
+            return CameraMediaItem(
+                id: UInt32(truncatingIfNeeded: name.hashValue),
+                filename: name,
+                sizeBytes: UInt64(file.fileSize),
+                format: Self.format(for: ext),
+                captureDate: file.creationDate ?? Date(),
+                isProtected: false,
+                usbFilename: name
+            )
+        }
+        // 文件名 DSC_xxxx 递增即拍摄顺序，倒序后最新在前
+        let ordered = items.sorted(by: { $0.filename > $1.filename })
+        DispatchQueue.main.async {
+            self.fetchedItems = ordered
+            self.isSyncingIndex = false
+            self.stats.indexedTotalFiles = ordered.count
+            self.currentPage = 0
+            self.hasMorePages = true
+            self.mediaItems.removeAll()
+            self.loadNextPage()
+        }
+    }
+
+    private static func format(for ext: String) -> MediaFormatType {
+        switch ext {
+        case "nef": return .rawNEF
+        case "mov": return .videoMOV
+        case "mp4": return .videoMP4
+        default: return .jpeg
+        }
+    }
+
+    /// 读存储卡容量与电量（USB 与 Wi-Fi 各走各的真读，读不到就保持未知、不编数）
+    public func refreshStorageFromCamera() {
+        if UsbCameraManager.shared.isUsbConnected {
+            UsbCameraManager.shared.refreshStorageInfo()
+            UsbCameraManager.shared.refreshBatteryLevel()
+            return
+        }
+        guard ptpClient.isSessionOpen else { return }
+        ptpClient.getStorageIDs { [weak self] ids in
+            guard let self = self, let first = ids.first else { return }
+            self.ptpClient.getStorageInfo(storageID: first) { info in
+                guard let info = info else { return }
+                let state = CameraConnectionService.shared.cameraState
+                DispatchQueue.main.async {
+                    state.cardTotalGB = Double(info.maxCapacity) / 1_000_000_000
+                    state.cardUsedGB = Double(info.maxCapacity - info.freeBytes) / 1_000_000_000
+                    state.remainingShots = info.freeImages == 0xFFFFFFFF
+                        ? Int(info.freeBytes / 25_000_000)
+                        : Int(info.freeImages)
+                    state.storageKnown = true
+                }
+            }
+        }
+        ptpClient.getDevicePropValue(code: 0x5001) { data in
+            guard let data = data, let first = data.first else { return }
+            let state = CameraConnectionService.shared.cameraState
+            DispatchQueue.main.async {
+                state.batteryPercentage = Int(first)
+                state.batteryKnown = true
+            }
+        }
     }
     
     /// 初始化从相机拉取对象句柄列表 (倒序排序，最新照片在前)
@@ -240,18 +336,11 @@ public final class MediaSyncService: ObservableObject {
     
     private static func makeItem(from info: PtpObjectInfo) -> CameraMediaItem {
         let ext = (info.filename as NSString).pathExtension.lowercased()
-        let format: MediaFormatType
-        switch ext {
-        case "nef": format = .rawNEF
-        case "mov": format = .videoMOV
-        case "mp4": format = .videoMP4
-        default: format = .jpeg
-        }
         return CameraMediaItem(
             id: info.handle,
             filename: info.filename,
             sizeBytes: info.sizeBytes,
-            format: format,
+            format: Self.format(for: ext),
             captureDate: info.captureDate ?? Date(),
             isProtected: info.protectionStatus != 0,
             thumbData: nil,

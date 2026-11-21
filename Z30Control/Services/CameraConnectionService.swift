@@ -154,6 +154,8 @@ public final class CameraConnectionService: ObservableObject, PtpIpClientDelegat
                 // 取景流不在这里启动——由取景页出现时启动（见 LiveViewMonitorView），
                 // 避免用户停在控制页时相机一直出取景流。
                 MediaSyncService.shared.refreshIndexFromCamera()
+                // v1.0.4：同时读一次存储卡容量与电量（之前仪表盘一直是假数）
+                MediaSyncService.shared.refreshStorageFromCamera()
             case .reconnecting(let attempt):
                 self.isConnecting = true
                 self.statusMessage = "正在尝试重连 (\(attempt))..."

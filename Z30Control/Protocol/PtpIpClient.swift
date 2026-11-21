@@ -427,6 +427,54 @@ public final class PtpIpClient {
             completion(code == PtpResponseCode.ok.rawValue ? data : nil)
         }
     }
+
+    // MARK: - v1.0.4：存储卡信息、电量与真实快门（Wi-Fi）
+
+    /// 存储卷信息（与 USB 端 UsbCameraManager.parseStorageInfo 同一套数据集布局）
+    public struct PtpStorageInfo {
+        public let maxCapacity: UInt64
+        public let freeBytes: UInt64
+        public let freeImages: UInt32
+    }
+
+    /// GetStorageInfo (0x1005)：取某存储卷的容量、剩余空间与相机自带的剩余张数
+    public func getStorageInfo(storageID: UInt32, completion: @escaping (PtpStorageInfo?) -> Void) {
+        sendDataRequest(opCode: PtpOperationCode.getStorageInfo.rawValue, params: [storageID]) { data, code in
+            guard let data = data, code == PtpResponseCode.ok.rawValue, data.count >= 26 else {
+                completion(nil)
+                return
+            }
+            var maxCap: UInt64 = 0
+            var freeB: UInt64 = 0
+            for i in 0..<8 {
+                maxCap |= UInt64(data[6 + i]) << (8 * i)
+                freeB |= UInt64(data[14 + i]) << (8 * i)
+            }
+            let freeImages = UInt32(data[22]) | (UInt32(data[23]) << 8) | (UInt32(data[24]) << 16) | (UInt32(data[25]) << 24)
+            completion(PtpStorageInfo(maxCapacity: maxCap, freeBytes: freeB, freeImages: freeImages))
+        }
+    }
+
+    /// GetDevicePropValue (0x1015)：读单个设备属性的原始值（例如电量 0x5001 为 1 字节）
+    public func getDevicePropValue(code: UInt16, completion: @escaping (Data?) -> Void) {
+        sendDataRequest(opCode: PtpOperationCode.getDevicePropValue.rawValue, params: [UInt32(code)]) { data, code in
+            completion(code == PtpResponseCode.ok.rawValue ? data : nil)
+        }
+    }
+
+    /// InitiateCapture (0x100E)：触发快门。成功只代表“已触发”，成片随后经
+    /// 事件通道的 ObjectAdded (0x4002) 回来，由 MediaSyncService 接手下载。
+    public func initiateCapture(completion: @escaping (Bool) -> Void) {
+        guard isSessionOpen else { completion(false); return }
+        let packet = PtpIpPacket.makeCmdRequest(
+            opCode: PtpOperationCode.initiateCapture.rawValue,
+            transactionId: nextTransactionId(),
+            params: [0xFFFFFFFF, 0]
+        )
+        sendCmdPacket(packet) { [weak self] resp in
+            completion(self?.cmdResponseCode(resp) == PtpResponseCode.ok.rawValue)
+        }
+    }
     
     // MARK: - 数据阶段请求（收数据方向的操作共用）
     /// 发送一条“收数据”命令并完整读回数据阶段：

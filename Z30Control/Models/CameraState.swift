@@ -59,12 +59,14 @@ public enum PictureControlMode: String, CaseIterable {
 /// 核心相机状态监控与中控台数据源 (ObservableObject)
 public final class CameraState: ObservableObject {
     
-    // MARK: - 基础硬件信息
+    // MARK: - 基础硬件信息（v1.0.4：默认值全部改为“未知”，绝不编数）
     @Published public var modelName: String = "NIKON Z30"
     @Published public var firmwareVersion: String = "FW V1.11"
     @Published public var serialNumber: String = "SN 7029182"
     @Published public var lensName: String = "NIKKOR Z DX 16-50mm f/3.5-6.3 VR"
-    @Published public var batteryPercentage: Int = 85
+    // 电量：nil = 还没从相机读到。之前默认 85% 是假数，读失败也一直显示 85%。
+    @Published public var batteryPercentage: Int = 0
+    @Published public var batteryKnown: Bool = false
     @Published public var isCharging: Bool = false
     @Published public var temperatureStatus: String = "温度正常"
     
@@ -74,9 +76,12 @@ public final class CameraState: ObservableObject {
     @Published public var ipAddress: String = "192.168.0.1"
     
     // MARK: - 存储卡状态 (Z30 为单 SD 卡槽)
-    @Published public var cardTotalGB: Double = 64.0
-    @Published public var cardUsedGB: Double = 23.5
-    @Published public var remainingShots: Int = 2840
+    // v1.0.4：之前默认 64GB/23.5GB/2840 张是写死的假数，全工程没任何地方读卡。
+    // 现在默认 0 + storageKnown=false，未读到之前界面显示“--”，绝不编数。
+    @Published public var cardTotalGB: Double = 0
+    @Published public var cardUsedGB: Double = 0
+    @Published public var remainingShots: Int = 0
+    @Published public var storageKnown: Bool = false
     public var cardUsagePercent: Int {
         guard cardTotalGB > 0 else { return 0 }
         return Int((cardUsedGB / cardTotalGB) * 100)
@@ -109,12 +114,19 @@ public final class CameraState: ObservableObject {
     
     public init() {}
     
-    /// 重置为出厂默认模拟数据
+    /// 断开连接时清空读到的状态（v1.0.4：之前这里会填 1/125、f/4.0、400 等假参数，
+    /// 且没有任何地方调用；改成清零+未知，避免以后有人误用假数）
     public func resetToDefaults() {
-        shutterSpeed = "1/125"
-        aperture = "f/4.0"
-        isoActual = "400"
-        exposureCompensation = "0 EV"
-        pictureControl = .standard
+        shutterSpeed = "--"
+        aperture = "--"
+        isoActual = "--"
+        exposureCompensation = "--"
+        batteryPercentage = 0
+        batteryKnown = false
+        cardTotalGB = 0
+        cardUsedGB = 0
+        remainingShots = 0
+        storageKnown = false
+        isLiveViewActive = false
     }
 }

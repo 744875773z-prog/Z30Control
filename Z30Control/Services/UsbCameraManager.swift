@@ -32,6 +32,7 @@ private enum NikonPTPProp: UInt16 {
 private enum NikonPTPOpCode: UInt16 {
     case getDevicePropValue  = 0x1015 // 读取设备属性值
     case setDevicePropValue  = 0x1016 // 设置设备属性值
+    case initiateCapture     = 0x100E // 触发快门拍摄
     case nikonStartLiveView  = 0x9201 // 开启实时取景
     case nikonEndLiveView    = 0x9202 // 结束实时取景
     case nikonGetLiveViewImg = 0x9203 // 拉取实时取景帧
@@ -62,17 +63,33 @@ public final class UsbCameraManager: NSObject, ObservableObject,
     @Published public var isLiveViewStreaming: Bool = false
     @Published public var currentLiveViewImage: UIImage? = nil
     @Published public var liveViewFPS: Int = 0
+    // v1.0.4：取景失败原因（显示在取景页，不再静悄悄黑屏）
+    @Published public var liveViewError: String = ""
+    // v1.0.4：最近一次 PTP 命令的诊断（一行，供控制页显示，例如
+    // “GetStorageInfo → 响应 0x2001，数据 38B” / “0x5001 → 只回响应包，无数据段”）
+    @Published public var ptpDiagnostic: String = ""
+    // v1.0.4：USB 卡内文件目录（ImageCaptureCore 完整目录，供图库页显示）
+    @Published public var usbMediaFiles: [ICCameraFile] = []
 
     // 设备浏览器与当前相机实例
     private var deviceBrowser: ICDeviceBrowser?
     public private(set) var activeCamera: ICCameraDevice?
 
     // PTP 通信
-    private var ptpTransactionID: UInt32 = 0
+    // v1.0.4：事务 ID 从 1000 起——ImageCaptureCore 自己的会话已经占用了
+    // 低位 ID（OpenSession 等），从 1 起发会和框架的命令撞号，相机可能拒答。
+    private var ptpTransactionID: UInt32 = 1000
     private var isFetchingFrame: Bool = false
     private var liveViewTimer: Timer?
     private var fpsCounter: Int = 0
     private var fpsTimer: Timer?
+    // v1.0.4：取景看门狗（启动后 3 秒没帧就停掉并报错）；电量轮询定时器（30 秒）
+    private var liveViewWatchdog: Timer?
+    private var lastFrameAt: Date?
+    private var batteryTimer: Timer?
+    private var lastFrameErrorAt: Date?
+    // v1.0.4：图库“保存原图”用的下载回调（按文件名挂起）
+    private var usbDownloadCompletions: [String: (Data?) -> Void] = [:]
 
     // 属性读取队列 (避免 USB 拥塞)
     private let ptpQueue = DispatchQueue(label: "com.z30control.ptp.serial", qos: .userInitiated)
@@ -103,6 +120,8 @@ public final class UsbCameraManager: NSObject, ObservableObject,
 
     public func stopListening() {
         stopLiveView()
+        batteryTimer?.invalidate()
+        batteryTimer = nil
         deviceBrowser?.stop()
         activeCamera?.requestCloseSession()
         activeCamera = nil
@@ -170,6 +189,9 @@ public final class UsbCameraManager: NSObject, ObservableObject,
         // 连接成功后 0.5 秒开始全量读取相机参数
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.fetchAllCameraProperties()
+            // v1.0.4：读卡信息（容量/剩余张数）+ 启动电量轮询（30 秒一次）
+            self?.refreshStorageInfo()
+            self?.startBatteryPolling()
         }
     }
 
@@ -179,24 +201,46 @@ public final class UsbCameraManager: NSObject, ObservableObject,
 
     private func handleDeviceDisconnect() {
         stopLiveView()
+        batteryTimer?.invalidate()
+        batteryTimer = nil
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             self.activeCamera = nil
             self.isUsbConnected = false
             self.connectedDeviceName = ""
+            self.usbMediaFiles = []
             CameraConnectionService.shared.isConnected = false
             CameraConnectionService.shared.cameraState.isConnected = false
             CameraConnectionService.shared.statusMessage = "相机连接已断开"
+            // 断开后读到的数全部作废，回到未知状态（v1.0.4，不留旧数冒充）
+            CameraConnectionService.shared.cameraState.resetToDefaults()
         }
     }
 
     // MARK: - ICCameraDeviceDelegate
     public func deviceDidBecomeReady(withCompleteContentCatalog device: ICCameraDevice) {
-        print("[UsbCameraManager] 相机完整目录已就绪，媒体文件数: \(device.mediaFiles?.count ?? 0)")
+        let files = (device.mediaFiles ?? []).compactMap { $0 as? ICCameraFile }
+        print("[UsbCameraManager] 相机完整目录已就绪，媒体文件数: \(files.count)")
+        DispatchQueue.main.async { [weak self] in
+            // v1.0.4：USB 卡内目录喂给图库（之前图库只走 Wi-Fi，USB 下永远 0 张）
+            self?.usbMediaFiles = files.sorted(by: { ($0.name ?? "") > ($1.name ?? "") })
+        }
     }
 
     public func cameraDevice(_ camera: ICCameraDevice, didAdd items: [ICCameraItem]) {
         print("[UsbCameraManager] 相机捕获到新素材，数量: \(items.count)")
+        // v1.0.4：新拍的照片也进 USB 目录，图库不用等下次刷新
+        let newFiles = items.compactMap { $0 as? ICCameraFile }
+        if !newFiles.isEmpty {
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                var all = self.usbMediaFiles
+                for f in newFiles where !all.contains(where: { $0.name == f.name }) {
+                    all.insert(f, at: 0)
+                }
+                self.usbMediaFiles = all
+            }
+        }
         for item in items {
             guard let file = item as? ICCameraFile else { continue }
             print("[UsbCameraManager] 新拍摄照片: \(file.name ?? "未命名")")
@@ -243,10 +287,19 @@ public final class UsbCameraManager: NSObject, ObservableObject,
                                          contextInfo: UnsafeMutableRawPointer?) {
         if let error = error {
             print("[UsbCameraManager] 照片下载出错: \(error)")
+            // v1.0.4：图库“保存原图”等着的下载也要给个失败答复，别让它一直转
+            if let name = file.name, let cb = usbDownloadCompletions.removeValue(forKey: name) {
+                cb(nil)
+            }
             return
         }
         let savedPath = (NSTemporaryDirectory() as NSString).appendingPathComponent(file.name ?? "capture.jpg")
         let loadedImage = UIImage(contentsOfFile: savedPath)
+        // v1.0.4：图库保存原图要的是文件数据（NEF 不能转 UIImage，得走原数据）
+        let fileData = try? Data(contentsOf: URL(fileURLWithPath: savedPath))
+        if let name = file.name, let cb = usbDownloadCompletions.removeValue(forKey: name) {
+            cb(fileData)
+        }
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
@@ -262,7 +315,24 @@ public final class UsbCameraManager: NSObject, ObservableObject,
             if let img = loadedImage {
                 UIImageWriteToSavedPhotosAlbum(img, nil, nil, nil)
             }
+            // v1.0.4：拍完一张，卡的剩余张数变了，重新读一次存储信息
+            self.refreshStorageInfo()
         }
+    }
+
+    // MARK: - v1.0.4：图库“保存原图”（USB）
+    /// 按文件名从卡里下载原文件，回调给原数据（NEF 也能走这条路）。
+    public func downloadUSBFile(named filename: String, completion: @escaping (Data?) -> Void) {
+        guard let camera = activeCamera, isUsbConnected else { completion(nil); return }
+        guard let file = usbMediaFiles.first(where: { $0.name == filename }) else { completion(nil); return }
+        usbDownloadCompletions[filename] = completion
+        camera.requestDownloadFile(
+            file,
+            options: [:],
+            downloadDelegate: self,
+            didDownloadSelector: #selector(didDownloadPhoto(_:error:options:contextInfo:)),
+            contextInfo: nil
+        )
     }
 
     // MARK: - ⭐ 真实 PTP 属性读取核心引擎
@@ -291,35 +361,73 @@ public final class UsbCameraManager: NSObject, ObservableObject,
         return packet
     }
 
+    /// v1.0.4：统一的 USB PTP 数据读取入口。之前每个地方各自猜响应格式，
+    /// 读不到就静悄悄返回，取景和参数全灭也不吭声。现在把三种可能都处理了，
+    /// 并把结果写进 ptpDiagnostic（控制页可见），下次实测一眼就知道卡在哪一步：
+    /// - 数据容器 (type 0x0002)：载荷在 12 字节头后面（GetDevicePropValue、GetStorageInfo 都是这种）
+    /// - 响应容器 (type 0x0003)：只有 12 字节响应码，没有数据段——说明这条路拿不到数据
+    /// - 数据容器后跟响应包：顺手把响应码也读出来
+    private func sendPTPDataCommand(opCode: UInt16, params: [UInt32] = [], completion: @escaping (Data?, UInt16?, String) -> Void) {
+        guard let camera = activeCamera, isUsbConnected else {
+            completion(nil, nil, "未连接相机")
+            return
+        }
+        let label = String(format: "0x%04X", opCode)
+        let cmd = buildPTPCommandPacket(opCode: opCode, params: params)
+        camera.requestSendPTPCommand(cmd, outData: nil) { [weak self] (_, responseData, error) in
+            if let error = error {
+                completion(nil, nil, "\(label) 出错：\(error.localizedDescription)")
+                return
+            }
+            guard responseData.count >= 12 else {
+                completion(nil, nil, "\(label) 响应仅 \(responseData.count)B，无数据")
+                return
+            }
+            let type = UInt16(responseData[4]) | (UInt16(responseData[5]) << 8)
+            if type == 0x0002 {
+                // 数据容器：[0-3]长度 [4-5]类型 [6-7]操作码 [8-11]事务号 [12+]数据
+                let dataLen = UInt32(responseData[0]) | (UInt32(responseData[1]) << 8) | (UInt32(responseData[2]) << 16) | (UInt32(responseData[3]) << 24)
+                let end = min(Int(dataLen), responseData.count)
+                guard end > 12 else {
+                    completion(nil, nil, "\(label) 数据容器为空")
+                    return
+                }
+                let payload = responseData.subdata(in: 12..<end)
+                var code: UInt16? = nil
+                if responseData.count >= end + 10 {
+                    let t2 = UInt16(responseData[end + 4]) | (UInt16(responseData[end + 5]) << 8)
+                    if t2 == 0x0003 {
+                        code = UInt16(responseData[end + 6]) | (UInt16(responseData[end + 7]) << 8)
+                    }
+                }
+                completion(payload, code, "\(label) → 数据 \(payload.count)B" + (code.map { String(format: "，响应 0x%04X", $0) } ?? ""))
+            } else if type == 0x0003 {
+                let code = UInt16(responseData[6]) | (UInt16(responseData[7]) << 8)
+                completion(nil, code, String(format: "\(label) → 只回响应包 0x%04X，无数据段", code))
+            } else {
+                completion(nil, nil, String(format: "\(label) → 未知容器类型 0x%04X", type))
+            }
+        }
+    }
+
+    private func setDiagnostic(_ text: String) {
+        print("[PTP] \(text)")
+        DispatchQueue.main.async { [weak self] in self?.ptpDiagnostic = text }
+    }
+
     /// 读取单个 PTP 设备属性值 → 解析并同步到 CameraState
     private func fetchSingleProperty(_ prop: NikonPTPProp, camera: ICCameraDevice) {
-        let cmd = buildPTPCommandPacket(opCode: NikonPTPOpCode.getDevicePropValue.rawValue,
-                                        params: [UInt32(prop.rawValue)])
-        camera.requestSendPTPCommand(cmd, outData: nil) { [weak self] (sentCommand, responseData, error) in
-            if let error = error {
-                print("[PTP] 读取属性 0x\(String(prop.rawValue, radix: 16)) 出错: \(error)")
+        sendPTPDataCommand(opCode: NikonPTPOpCode.getDevicePropValue.rawValue,
+                           params: [UInt32(prop.rawValue)]) { [weak self] payload, code, diag in
+            self?.setDiagnostic(diag)
+            guard let payload = payload, !payload.isEmpty else {
+                print("[PTP] 属性 0x\(String(prop.rawValue, radix: 16)) 未读到数据：\(diag)")
                 return
             }
-            // Apple API 确认：
-            //   sentCommand (第1参数) = 发出去的命令数据（不是相机回来的！）
-            //   responseData (第2参数) = 相机返回的完整 PTP 响应容器
-            //     [0-3]  Length
-            //     [4-5]  ContainerType (0x0003 = Response)
-            //     [6-7]  ResponseCode (0x2001 = OK)
-            //     [8-11] TransactionID
-            //     [12+]  属性值载荷 (GetDevicePropValue 的实际数据)
-            guard responseData.count >= 12 else {
-                print("[PTP] 属性 0x\(String(prop.rawValue, radix: 16)) 响应不足12字节: \(responseData.count)B")
+            if let code = code, code != 0x2001 {
+                print("[PTP] 属性 0x\(String(prop.rawValue, radix: 16)) 响应码 0x\(String(code, radix: 16))")
                 return
             }
-            // 验证响应码是否为 PTP_RC_OK (0x2001)
-            let respCode = UInt16(responseData[6]) | (UInt16(responseData[7]) << 8)
-            guard respCode == 0x2001 || responseData.count > 12 else {
-                print("[PTP] 属性 0x\(String(prop.rawValue, radix: 16)) 响应错误码: 0x\(String(respCode, radix: 16))")
-                return
-            }
-            let payload = responseData.subdata(in: 12..<responseData.count)
-            guard !payload.isEmpty else { return }
             self?.applyPropertyValue(prop: prop, payload: payload)
         }
     }
@@ -327,12 +435,9 @@ public final class UsbCameraManager: NSObject, ObservableObject,
     /// 连接成功后，全量读取所有关键属性
     private func fetchAllCameraProperties() {
         guard let camera = activeCamera, isUsbConnected else { return }
-        // camera.capabilities 是非可选的 [String]，用 ICDeviceCapability rawValue 匹配
-        let ptpCap = ICDeviceCapability.cameraDeviceCanAcceptPTPCommands.rawValue
-        guard camera.capabilities.contains(where: { $0 == ptpCap }) else {
-            print("[PTP] 该设备不支持 PTP 命令，跳过属性读取")
-            return
-        }
+        // v1.0.4：之前这里拿 capabilities 做门禁，门禁不过就静默跳过全部读取，
+        // 取景和参数全灭也不吭声。现在只记日志，照样发命令，用响应码说话。
+        print("[PTP] 相机 capabilities: \(camera.capabilities)")
 
         let propsToFetch: [NikonPTPProp] = [
             .exposureTime, .fNumber, .exposureIndex,
@@ -348,6 +453,83 @@ public final class UsbCameraManager: NSObject, ObservableObject,
                 self.fetchSingleProperty(prop, camera: cam)
             }
         }
+    }
+
+    // MARK: - v1.0.4：存储卡真实读取（GetStorageIDs → GetStorageInfo）
+
+    private struct StorageInfo {
+        let maxCapacity: UInt64
+        let freeBytes: UInt64
+        let freeImages: UInt32
+    }
+
+    /// StorageInfo 数据集：StorageType(2) FilesystemType(2) AccessCapability(2)
+    /// MaxCapacity(8) FreeSpaceInBytes(8) FreeSpaceInImages(4) …
+    private static func parseStorageInfo(_ data: Data) -> StorageInfo? {
+        guard data.count >= 26 else { return nil }
+        let u32 = { (o: Int) in UInt32(data[o]) | (UInt32(data[o + 1]) << 8) | (UInt32(data[o + 2]) << 16) | (UInt32(data[o + 3]) << 24) }
+        var maxCap: UInt64 = 0
+        var freeB: UInt64 = 0
+        for i in 0..<8 {
+            maxCap |= UInt64(data[6 + i]) << (8 * i)
+            freeB |= UInt64(data[14 + i]) << (8 * i)
+        }
+        return StorageInfo(maxCapacity: maxCap, freeBytes: freeB, freeImages: u32(22))
+    }
+
+    private static func parseUInt32Array(_ data: Data) -> [UInt32] {
+        guard data.count >= 4 else { return [] }
+        let count = data.subdata(in: 0..<4).withUnsafeBytes { $0.load(as: UInt32.self) }
+        var result: [UInt32] = []
+        var offset = 4
+        for _ in 0..<count {
+            guard offset + 4 <= data.count else { break }
+            result.append(data.subdata(in: offset..<offset + 4).withUnsafeBytes { $0.load(as: UInt32.self) })
+            offset += 4
+        }
+        return result
+    }
+
+    /// 读卡：容量、剩余空间、相机自带的剩余张数，写进 CameraState（替代写死的假数）
+    public func refreshStorageInfo() {
+        guard isUsbConnected else { return }
+        sendPTPDataCommand(opCode: 0x1004) { [weak self] payload, _, diag in
+            self?.setDiagnostic(diag)
+            guard let payload = payload else { return }
+            let ids = Self.parseUInt32Array(payload)
+            guard let first = ids.first else { return }
+            self?.sendPTPDataCommand(opCode: 0x1005, params: [first]) { [weak self] infoPayload, _, diag2 in
+                self?.setDiagnostic(diag2)
+                guard let infoPayload = infoPayload,
+                      let info = Self.parseStorageInfo(infoPayload) else { return }
+                let state = CameraConnectionService.shared.cameraState
+                DispatchQueue.main.async {
+                    state.cardTotalGB = Double(info.maxCapacity) / 1_000_000_000
+                    state.cardUsedGB = Double(info.maxCapacity - info.freeBytes) / 1_000_000_000
+                    // 相机自带的剩余张数；0xFFFFFFFF 表示未知时按 25MB/张估算
+                    state.remainingShots = info.freeImages == 0xFFFFFFFF
+                        ? Int(info.freeBytes / 25_000_000)
+                        : Int(info.freeImages)
+                    state.storageKnown = true
+                    print("[PTP] 存储卡：总量 \(String(format: "%.1f", state.cardTotalGB))GB，剩余 \(String(format: "%.1f", Double(info.freeBytes) / 1_000_000_000))GB，可拍 \(state.remainingShots) 张")
+                }
+            }
+        }
+    }
+
+    // MARK: - v1.0.4：电量轮询（30 秒读一次，之前只在连接时读一次）
+
+    private func startBatteryPolling() {
+        batteryTimer?.invalidate()
+        batteryTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            guard let self = self, self.isUsbConnected, let cam = self.activeCamera else { return }
+            self.fetchSingleProperty(.batteryLevel, camera: cam)
+        }
+    }
+
+    public func refreshBatteryLevel() {
+        guard isUsbConnected, let cam = activeCamera else { return }
+        fetchSingleProperty(.batteryLevel, camera: cam)
     }
 
     /// 解析 PTP 数据容器载荷并更新 CameraState
@@ -432,9 +614,10 @@ public final class UsbCameraManager: NSObject, ObservableObject,
                 print("[PTP] 测光: \(cameraState.meteringMode.rawValue) (原始=\(raw))")
 
             case .batteryLevel:
-                // UINT8，电量百分比
+                // UINT8，电量百分比；读到一次才算“已知”，之前默认 85% 是假数
                 guard !bytes.isEmpty else { return }
                 cameraState.batteryPercentage = Int(bytes[0])
+                cameraState.batteryKnown = true
                 print("[PTP] 电量: \(bytes[0])%")
 
             case .focusMode:
@@ -540,32 +723,71 @@ public final class UsbCameraManager: NSObject, ObservableObject,
     // MARK: - USB PTP 实时取景 (Live View) 协议驱动
 
     /// 开启尼康 USB 实时取景传感器数据流 (OpCode: 0x9201)
+    /// v1.0.4：之前不管命令成没成，回包一到就把 isLiveViewStreaming 置 true，
+    /// 然后帧一直不到也不报错，界面就永远是黑底占位图。现在：
+    /// 1) 只在响应码为 OK 时才算启动成功，否则把原因写进 liveViewError；
+    /// 2) 启动后 3 秒没收到帧，看门狗停掉并报错（相机须处于拍照模式，
+    ///    回放/菜单状态下取景起不来）。
     public func startLiveView() {
         guard let camera = activeCamera, isUsbConnected else {
+            DispatchQueue.main.async { [weak self] in
+                self?.liveViewError = "相机未连接，无法开启取景"
+            }
             print("[UsbCameraManager] 相机未连接或未就绪，无法开启 LiveView")
             return
         }
         guard !isLiveViewStreaming else { return }
-        // camera.capabilities 是非可选的 [String]，用 ICDeviceCapability rawValue 匹配
-        let ptpCap = ICDeviceCapability.cameraDeviceCanAcceptPTPCommands.rawValue
-        guard camera.capabilities.contains(where: { $0 == ptpCap }) else {
-            print("[UsbCameraManager] 相机不支持 PTP 命令，无法开启 LiveView")
-            return
-        }
+        DispatchQueue.main.async { [weak self] in self?.liveViewError = "" }
 
         print("[UsbCameraManager] 发送尼康 StartLiveView (0x9201)...")
         let startCmd = buildPTPCommandPacket(opCode: NikonPTPOpCode.nikonStartLiveView.rawValue)
 
-        camera.requestSendPTPCommand(startCmd, outData: nil) { [weak self] (_, _, error) in
+        camera.requestSendPTPCommand(startCmd, outData: nil) { [weak self] (_, responseData, error) in
+            guard let self = self else { return }
             if let error = error {
-                print("[UsbCameraManager] StartLiveView 命令出错(可能相机不支持): \(error)")
-            } else {
-                print("[UsbCameraManager] StartLiveView 命令已送达")
+                print("[UsbCameraManager] StartLiveView 命令出错: \(error)")
+                DispatchQueue.main.async {
+                    self.liveViewError = "取景启动失败：\(error.localizedDescription)"
+                }
+                return
             }
+            // 响应包 [6-7] 为响应码，0x2001=OK；只回响应包、无数据段也算正常
+            //（StartLiveView 本来就不带数据）
+            var respCode: UInt16? = nil
+            if responseData.count >= 8 {
+                let t = UInt16(responseData[4]) | (UInt16(responseData[5]) << 8)
+                if t == 0x0003, responseData.count >= 8 {
+                    respCode = UInt16(responseData[6]) | (UInt16(responseData[7]) << 8)
+                }
+            }
+            if let code = respCode, code != 0x2001 {
+                print("[UsbCameraManager] StartLiveView 被拒，响应码 0x\(String(code, radix: 16))")
+                DispatchQueue.main.async {
+                    self.liveViewError = String(format: "取景启动被拒（0x%04X）：请确认相机处于拍照模式，不在回放/菜单", code)
+                }
+                return
+            }
+            print("[UsbCameraManager] StartLiveView 命令已送达，响应码 \(respCode.map { String(format: "0x%04X", $0) } ?? "未知")")
             DispatchQueue.main.async {
-                guard let self = self else { return }
                 self.isLiveViewStreaming = true
+                self.lastFrameAt = nil
                 self.startFrameFetchTimer()
+                self.startLiveViewWatchdog()
+            }
+        }
+    }
+
+    /// 取景看门狗：启动后 3 秒仍无帧，停掉并给出原因
+    private func startLiveViewWatchdog() {
+        liveViewWatchdog?.invalidate()
+        liveViewWatchdog = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { [weak self] _ in
+            guard let self = self else { return }
+            if self.isLiveViewStreaming, self.lastFrameAt == nil {
+                print("[UsbCameraManager] 取景看门狗：3 秒内未收到帧")
+                self.stopLiveView()
+                DispatchQueue.main.async {
+                    self.liveViewError = "已启动但 3 秒内未收到取景帧：请确认相机处于拍照模式（非回放/菜单），USB 数据连接设为 iPhone/PTP 后重连"
+                }
             }
         }
     }
@@ -576,6 +798,8 @@ public final class UsbCameraManager: NSObject, ObservableObject,
         liveViewTimer = nil
         fpsTimer?.invalidate()
         fpsTimer = nil
+        liveViewWatchdog?.invalidate()
+        liveViewWatchdog = nil
         isFetchingFrame = false
 
         DispatchQueue.main.async { [weak self] in
@@ -613,19 +837,30 @@ public final class UsbCameraManager: NSObject, ObservableObject,
         let getCmd = buildPTPCommandPacket(opCode: NikonPTPOpCode.nikonGetLiveViewImg.rawValue)
         camera.requestSendPTPCommand(getCmd, outData: nil) { [weak self] (sentCommand, responseData, error) in
             defer { self?.isFetchingFrame = false }
-            guard let self = self, error == nil else { return }
+            guard let self = self else { return }
+            if let error = error {
+                self.noteFrameError("取景帧出错：\(error.localizedDescription)")
+                return
+            }
 
-            // sentCommand = 发出去的命令（不是返回的帧数据）
-            // responseData = 相机返回的完整 PTP 数据容器（包含 JPEG 帧）
-            // GetLiveViewImg (0x9203) 返回数据容器包含 Nikon 私有头 + JPEG
-            guard responseData.count > 128 else { return }
+            // v1.0.4：之前要求 >128 字节且找不到 JPEG 就静默丢弃，黑屏无任何提示。
+            // 现在把失败原因记下来（节流 1 秒一次，避免 20fps 刷屏）。
+            guard responseData.count > 64 else {
+                self.noteFrameError("取景帧仅 \(responseData.count)B，无图像数据")
+                return
+            }
 
             // 直接搜索 JPEG SOI 标记 0xFF 0xD8，不依赖固定偏移量
             let bytes = [UInt8](responseData)
-            guard let jpegStart = self.findJPEGStart(in: bytes) else { return }
+            guard let jpegStart = self.findJPEGStart(in: bytes) else {
+                let t = responseData.count >= 6 ? String(format: "容器类型 0x%04X", UInt16(bytes[4]) | (UInt16(bytes[5]) << 8)) : "短包"
+                self.noteFrameError("取景帧 \(responseData.count)B，无 JPEG 标记（\(t)）")
+                return
+            }
             let jpegData = responseData.subdata(in: jpegStart..<responseData.count)
 
             if let img = UIImage(data: jpegData) {
+                self.lastFrameAt = Date()
                 DispatchQueue.main.async {
                     self.currentLiveViewImage = img
                     self.fpsCounter += 1
@@ -634,7 +869,80 @@ public final class UsbCameraManager: NSObject, ObservableObject,
                         LiveViewStreamService.shared.updateFrame(frame)
                     }
                 }
+            } else {
+                self.noteFrameError("取景帧 JPEG 解码失败（\(jpegData.count)B）")
             }
+        }
+    }
+
+    /// 取景帧失败记录（节流：1 秒最多记一次，避免刷爆诊断栏）
+    private func noteFrameError(_ text: String) {
+        let now = Date()
+        if let last = lastFrameErrorAt, now.timeIntervalSince(last) < 1.0 { return }
+        lastFrameErrorAt = now
+        print("[UsbCameraManager] \(text)")
+        DispatchQueue.main.async { [weak self] in self?.ptpDiagnostic = text }
+    }
+
+    // MARK: - v1.0.4：真实快门（InitiateCapture 0x100E）
+
+    /// 向相机发拍摄命令。成功只代表“快门已触发”，成片随后经 didAdd 回调
+    /// 自动下载（见 cameraDevice(_:didAdd:)），再由界面回显真图。
+    /// 之前快门按钮是假的：不发任何命令，只随机编个 DSC_xxxx.JPG 弹“拍摄完成”。
+    public func capturePhoto(completion: @escaping (Bool, String?) -> Void) {
+        guard let camera = activeCamera, isUsbConnected else {
+            completion(false, "相机未连接")
+            return
+        }
+        let cmd = buildPTPCommandPacket(opCode: NikonPTPOpCode.initiateCapture.rawValue, params: [0xFFFFFFFF, 0])
+        camera.requestSendPTPCommand(cmd, outData: nil) { [weak self] (_, responseData, error) in
+            if let error = error {
+                completion(false, error.localizedDescription)
+                return
+            }
+            var code: UInt16? = nil
+            if responseData.count >= 8 {
+                let t = UInt16(responseData[4]) | (UInt16(responseData[5]) << 8)
+                if t == 0x0003 {
+                    code = UInt16(responseData[6]) | (UInt16(responseData[7]) << 8)
+                }
+            }
+            if let code = code, code != 0x2001 {
+                self?.setDiagnostic(String(format: "快门被拒 0x%04X", code))
+                completion(false, String(format: "相机返回 0x%04X", code))
+                return
+            }
+            print("[UsbCameraManager] 快门已触发，等待相机回传成片")
+            completion(true, nil)
+        }
+    }
+
+    // MARK: - v1.0.4：真实调参（SetDevicePropValue 0x1016，值走数据阶段）
+
+    /// 设置单个设备属性。USB 上 outData 就是数据阶段的值。
+    /// 成功后才由调用方更新界面显示；失败则保留旧值并写诊断。
+    public func setCameraProp(code: UInt16, value: Data, completion: @escaping (Bool) -> Void) {
+        guard let camera = activeCamera, isUsbConnected else { completion(false); return }
+        let cmd = buildPTPCommandPacket(opCode: NikonPTPOpCode.setDevicePropValue.rawValue,
+                                        params: [UInt32(code)])
+        camera.requestSendPTPCommand(cmd, outData: value) { [weak self] (_, responseData, error) in
+            guard error == nil else {
+                self?.setDiagnostic("设置属性 0x\(String(code, radix: 16)) 出错：\(error!.localizedDescription)")
+                completion(false)
+                return
+            }
+            var respCode: UInt16? = nil
+            if responseData.count >= 8 {
+                let t = UInt16(responseData[4]) | (UInt16(responseData[5]) << 8)
+                if t == 0x0003 {
+                    respCode = UInt16(responseData[6]) | (UInt16(responseData[7]) << 8)
+                }
+            }
+            let ok = respCode == nil || respCode == 0x2001
+            if !ok {
+                self?.setDiagnostic(String(format: "设置属性被拒 0x%04X", respCode!))
+            }
+            completion(ok)
         }
     }
 

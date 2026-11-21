@@ -42,6 +42,7 @@ OP_GET_OBJECT_HANDLES = 0x1007
 OP_GET_OBJECT_INFO = 0x1008
 OP_GET_OBJECT = 0x1009
 OP_GET_THUMB = 0x100A
+OP_INITIATE_CAPTURE = 0x100E
 OP_GET_DEVICE_PROP_VALUE = 0x1015
 OP_SET_DEVICE_PROP_VALUE = 0x1016
 OP_NIKON_START_LIVEVIEW = 0x9201
@@ -196,6 +197,39 @@ class NikonZ30Simulator:
             self.send_data_payload(sock, trans_id, payload)
             self.send_cmd_response(sock, RC_OK, trans_id)
             
+        # 3b. 存储卷信息 (GetStorageInfo 0x1005，v1.0.4 新增)
+        elif op_code == OP_GET_STORAGE_INFO:
+            def ptp_str(s):
+                units = (s + "\x00").encode("utf-16le")
+                return struct.pack("<B", len(s) + 1) + units
+            # StorageType=0x0003(可移动), FilesystemType=0x0002(DCF),
+            # AccessCapability=0x0000(读写), 64GB 卡 / 剩余 40.5GB / 可拍 2840 张
+            info = struct.pack("<HHHQQI", 0x0003, 0x0002, 0x0000,
+                               64_000_000_000, 40_500_000_000, 2840)
+            info += ptp_str("SD") + ptp_str("Z30_SD")
+            self.send_data_payload(sock, trans_id, info)
+            self.send_cmd_response(sock, RC_OK, trans_id)
+
+        # 3c. 设备属性读取 (GetDevicePropValue 0x1015，v1.0.4 新增)
+        elif op_code == OP_GET_DEVICE_PROP_VALUE:
+            prop = params[0] if params else 0
+            values = {
+                0x5001: struct.pack("<B", 78),    # 电量 78%
+                0x500D: struct.pack("<I", 80),    # 快门 1/125s（80 = 0.008s × 10000）
+                0x5007: struct.pack("<H", 400),   # 光圈 f/4.0
+                0x500F: struct.pack("<H", 400),   # ISO 400
+                0x5010: struct.pack("<h", 0),     # EV 0
+            }
+            self.send_data_payload(sock, trans_id, values.get(prop, b""))
+            self.send_cmd_response(sock, RC_OK, trans_id)
+
+        # 3d. 触发快门 (InitiateCapture 0x100E，v1.0.4 新增)
+        elif op_code == OP_INITIATE_CAPTURE:
+            new_id = max(self.media_db.keys()) + 1
+            self.media_db[new_id] = {"name": "DSC_3983.JPG", "size": len(TEST_JPEG), "protected": 0}
+            print(f"[Z30 模拟器] 📸 快门触发，新照片 {new_id} DSC_3983.JPG 已写入卡")
+            self.send_cmd_response(sock, RC_OK, trans_id)
+
         # 4. 获取文件句柄列表 (GetObjectHandles 0x1007)
         elif op_code == OP_GET_OBJECT_HANDLES:
             handles = list(self.media_db.keys())

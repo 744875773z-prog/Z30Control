@@ -27,6 +27,10 @@ public struct LiveViewMonitorView: View {
     @State private var isFocusPulsing = false
     @State private var isAfOnActive = false
     @State private var instantPreviewName: String? = nil
+    // v1.0.4：回显浮层的标题/副标题（之前写死“拍摄完成/已安全落盘”，快门本身是假的）
+    @State private var previewTitle = "拍摄完成 · 即时预览 (2s)"
+    @State private var previewSubtitle = "成片已回传至手机"
+    @State private var isCapturing = false
     @State private var showingWiredHelp = false
     
     // 参数选择 Sheet
@@ -115,6 +119,16 @@ public struct LiveViewMonitorView: View {
             if connected && !usbCamera.isUsbConnected {
                 connectionService.client.startLiveView()
             }
+        }
+        .onChange(of: usbCamera.lastCapturedFilename) { name in
+            // v1.0.4：机身快门或 App 快门拍完、照片真下载回来后，才回显真图+真文件名。
+            // 之前快门按钮当场就随机编个 DSC_xxxx 弹“拍摄完成”，相机根本没拍。
+            guard !name.isEmpty else { return }
+            showPreview(
+                filename: name,
+                title: "拍摄完成 · 即时预览 (2s)",
+                subtitle: usbCamera.lastCapturedPhoto != nil ? "已回传并存入相册" : "已回传至手机"
+            )
         }
     }
     
@@ -313,6 +327,22 @@ public struct LiveViewMonitorView: View {
                         .foregroundColor(.white.opacity(0.7))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 24)
+                    
+                    // v1.0.4：取景失败原因直接显示，不再静悄悄黑屏
+                    if !usbCamera.liveViewError.isEmpty {
+                        Text(usbCamera.liveViewError)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(Color(red: 1.0, green: 0.55, blue: 0.45))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 24)
+                    }
+                    if !usbCamera.ptpDiagnostic.isEmpty {
+                        Text(usbCamera.ptpDiagnostic)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.5))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 24)
+                    }
                 } else {
                     Image(systemName: "cable.connector.slash")
                         .font(.system(size: 36))
@@ -412,7 +442,7 @@ public struct LiveViewMonitorView: View {
                                 .foregroundColor(.black)
                                 .cornerRadius(4)
                             
-                            Text("[\(cameraState.remainingShots)]")
+                            Text(cameraState.storageKnown ? "[\(cameraState.remainingShots)]" : "[--]")
                                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                                 .foregroundColor(.white)
                                 .shadow(color: .black, radius: 2)
@@ -826,31 +856,77 @@ public struct LiveViewMonitorView: View {
         .disabled(!isActionable)
     }
     
-    // MARK: - 触发快门拍摄
+    // MARK: - 触发快门拍摄（v1.0.4：真的发 InitiateCapture）
+    // 之前是假的：不发任何命令，只随机编个 DSC_xxxx.JPG 弹“拍摄完成”，
+    // 还顺手把剩余张数减 1。相机根本没拍。
+    // 现在：发拍摄命令；成功只代表“已触发”，成片随后经 didAdd 下载回来，
+    // 由 onChange(lastCapturedFilename) 回显真图。失败则报原因。
     private func triggerShutterCapture() {
+        guard !isCapturing else { return }
         NikonTheme.triggerHaptic(style: .heavy)
-        
-        cameraState.remainingShots = max(0, cameraState.remainingShots - 1)
-        let name = "DSC_\(Int.random(in: 3000...3999)).JPG"
+        isCapturing = true
+        if usbCamera.isUsbConnected {
+            usbCamera.capturePhoto { [weak self] ok, err in
+                DispatchQueue.main.async {
+                    self?.isCapturing = false
+                    if !ok {
+                        self?.showPreview(
+                            filename: nil,
+                            title: "快门触发失败",
+                            subtitle: err ?? "相机无响应"
+                        )
+                    }
+                    // 成功时不弹东西，等照片真下载回来再回显
+                }
+            }
+        } else if connectionService.isConnected {
+            connectionService.client.initiateCapture { [weak self] ok in
+                DispatchQueue.main.async {
+                    self?.isCapturing = false
+                    if ok {
+                        self?.showPreview(
+                            filename: nil,
+                            title: "快门已触发",
+                            subtitle: "速传中，完成后见图库"
+                        )
+                    } else {
+                        self?.showPreview(
+                            filename: nil,
+                            title: "快门触发失败",
+                            subtitle: "Wi-Fi 未响应，请重试"
+                        )
+                    }
+                }
+            }
+        } else {
+            isCapturing = false
+            showPreview(filename: nil, title: "未连接相机", subtitle: "请先连上相机再拍摄")
+        }
+    }
+
+    /// 显示回显浮层（2 秒后自动消失）；filename 为 nil 时不显示文件名行
+    private func showPreview(filename: String?, title: String, subtitle: String) {
         withAnimation(.easeInOut(duration: 0.15)) {
-            self.instantPreviewName = name
+            self.previewTitle = title
+            self.previewSubtitle = subtitle
+            self.instantPreviewName = filename ?? " "
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             withAnimation(.easeOut(duration: 0.25)) {
-                if self.instantPreviewName == name {
+                if self.previewTitle == title {
                     self.instantPreviewName = nil
                 }
             }
         }
     }
     
-    // MARK: - 拍摄后即时大图回放浮层
+    // MARK: - 拍摄后即时大图回放浮层（只显示真实回传的照片）
     private func instantPreviewOverlay(filename: String) -> some View {
         ZStack {
             Color.black.opacity(0.85)
             VStack(spacing: 12) {
                 HStack {
-                    Text("拍摄完成 · 即时预览 (2s)")
+                    Text(previewTitle)
                         .font(.system(size: 11, weight: .bold))
                         .foregroundColor(.black)
                         .padding(.horizontal, 8)
@@ -858,20 +934,32 @@ public struct LiveViewMonitorView: View {
                         .background(NikonTheme.nikonYellow)
                         .cornerRadius(4)
                     Spacer()
-                    Text(filename)
-                        .font(.system(size: 13, weight: .bold, design: .monospaced))
-                        .foregroundColor(.white)
+                    if filename != " " {
+                        Text(filename)
+                            .font(.system(size: 13, weight: .bold, design: .monospaced))
+                            .foregroundColor(.white)
+                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 16)
                 
                 Spacer()
                 
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 56))
-                    .foregroundColor(NikonTheme.readyGreen)
+                // 有真图就显示真图，否则只显示状态图标
+                if let img = usbCamera.lastCapturedPhoto, filename != " " {
+                    Image(uiImage: img)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxHeight: 320)
+                        .cornerRadius(10)
+                        .padding(.horizontal, 16)
+                } else {
+                    Image(systemName: previewTitle.contains("失败") || previewTitle.contains("未连接") ? "xmark.circle.fill" : "checkmark.circle.fill")
+                        .font(.system(size: 56))
+                        .foregroundColor(previewTitle.contains("失败") || previewTitle.contains("未连接") ? Color(red: 1.0, green: 0.45, blue: 0.35) : NikonTheme.readyGreen)
+                }
                 
-                Text("成片已安全落盘 · RAW+JPEG 原片同步")
+                Text(previewSubtitle)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.white.opacity(0.8))
                 
@@ -1009,6 +1097,47 @@ public struct LiveViewMonitorView: View {
         }
     }
     
+    // MARK: - v1.0.4：曝光参数真实下发（之前选完只改本地显示，还谎称“已下发至机身”）
+    // 成功后才更新界面显示；失败保留旧值，原因写进 PTP 诊断。
+    private func setExposureProp(code: UInt16, value: Data, apply: @escaping () -> Void) {
+        if usbCamera.isUsbConnected {
+            usbCamera.setCameraProp(code: code, value: value) { ok in
+                DispatchQueue.main.async { if ok { apply() } }
+            }
+        } else if connectionService.isConnected {
+            connectionService.client.setDevicePropValue(code: code, value: value) { ok in
+                DispatchQueue.main.async { if ok { apply() } }
+            }
+        }
+        // 未连接时不改显示：没下发就别假装改了
+    }
+
+    /// “1/125”→80、“1s”→10000（ExposureTime 单位：秒×10000）
+    private func encodeShutter(_ s: String) -> UInt32? {
+        guard s.hasSuffix("s") else { return nil }
+        let core = String(s.dropLast())
+        if core.hasPrefix("1/"), let d = Double(core.dropFirst(2)), d > 0 {
+            return UInt32(10000.0 / d)
+        }
+        if let sec = Double(core) {
+            return UInt32(sec * 10000)
+        }
+        return nil
+    }
+
+    /// “f/4.0”→400（FNumber 单位：F值×100）
+    private func encodeAperture(_ s: String) -> UInt16? {
+        guard s.hasPrefix("f/"), let v = Double(s.dropFirst(2)) else { return nil }
+        return UInt16(v * 100)
+    }
+
+    /// “+1.0 EV”→1000、“-0.3 EV”→-300（ExposureBias 单位：EV×1000）
+    private func encodeEV(_ s: String) -> Int16? {
+        let core = s.replacingOccurrences(of: " EV", with: "")
+        guard let v = Double(core) else { return nil }
+        return Int16(v * 1000)
+    }
+
     // MARK: - 参数选择器 ActionSheet 映射
     private func makeParamActionSheet(for param: String) -> ActionSheet {
         switch param {
@@ -1019,7 +1148,10 @@ public struct LiveViewMonitorView: View {
                 message: Text("通过 PTP 实时下发至机身硬件"),
                 buttons: speeds.map { s in
                     .default(Text(s)) {
-                        cameraState.shutterSpeed = s
+                        guard let raw = encodeShutter(s) else { return }
+                        setExposureProp(code: 0x500D, value: Data(raw.littleEndianBytes)) {
+                            cameraState.shutterSpeed = s
+                        }
                     }
                 } + [.cancel(Text("取消"))]
             )
@@ -1029,7 +1161,10 @@ public struct LiveViewMonitorView: View {
                 title: Text("调节镜头光圈 (Aperture)"),
                 buttons: aps.map { a in
                     .default(Text(a)) {
-                        cameraState.aperture = a
+                        guard let raw = encodeAperture(a) else { return }
+                        setExposureProp(code: 0x5007, value: Data(raw.littleEndianBytes)) {
+                            cameraState.aperture = a
+                        }
                     }
                 } + [.cancel(Text("取消"))]
             )
@@ -1040,12 +1175,17 @@ public struct LiveViewMonitorView: View {
                 buttons: isos.map { iso in
                     .default(Text(iso)) {
                         if iso.contains("自动") {
-                            cameraState.isAutoISO = true
-                            cameraState.isoActual = "自动"
-                        } else {
-                            cameraState.isAutoISO = false
-                            cameraState.isoBase = iso
-                            cameraState.isoActual = iso
+                            // 0xFFFF = Auto ISO
+                            setExposureProp(code: 0x500F, value: Data(UInt16(0xFFFF).littleEndianBytes)) {
+                                cameraState.isAutoISO = true
+                                cameraState.isoActual = "自动"
+                            }
+                        } else if let v = UInt16(iso) {
+                            setExposureProp(code: 0x500F, value: Data(v.littleEndianBytes)) {
+                                cameraState.isAutoISO = false
+                                cameraState.isoBase = iso
+                                cameraState.isoActual = iso
+                            }
                         }
                     }
                 } + [.cancel(Text("取消"))]
@@ -1056,7 +1196,10 @@ public struct LiveViewMonitorView: View {
                 title: Text("曝光补偿 (± EV)"),
                 buttons: evs.map { ev in
                     .default(Text(ev)) {
-                        cameraState.exposureCompensation = ev
+                        guard let raw = encodeEV(ev) else { return }
+                        setExposureProp(code: 0x5010, value: Data(raw.littleEndianBytes)) {
+                            cameraState.exposureCompensation = ev
+                        }
                     }
                 } + [.cancel(Text("取消"))]
             )

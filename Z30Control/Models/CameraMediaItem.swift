@@ -47,7 +47,12 @@ public struct CameraMediaItem: Identifiable, Equatable {
     
     /// 连拍序列张数标记 (可选)
     public var burstCount: Int?
-    
+
+    /// v1.0.4：USB 来源标记——非 nil 表示这张来自 USB 卡目录（ImageCaptureCore），
+    /// 下载走 UsbCameraManager.requestDownloadFile 而非 PTP/IP 的 GetObject。
+    /// 文件名即查找键；nil 表示 Wi-Fi PTP/IP 来源。
+    public var usbFilename: String?
+
     public init(
         id: UInt32,
         filename: String,
@@ -57,7 +62,8 @@ public struct CameraMediaItem: Identifiable, Equatable {
         isProtected: Bool = false,
         thumbData: Data? = nil,
         isDownloaded: Bool = false,
-        burstCount: Int? = nil
+        burstCount: Int? = nil,
+        usbFilename: String? = nil
     ) {
         self.id = id
         self.filename = filename
@@ -68,6 +74,7 @@ public struct CameraMediaItem: Identifiable, Equatable {
         self.thumbData = thumbData
         self.isDownloaded = isDownloaded
         self.burstCount = burstCount
+        self.usbFilename = usbFilename
     }
     
     /// 友好的文件大小文本 (例如 "14.8 MB")

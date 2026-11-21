@@ -264,7 +264,8 @@ public struct ControlDashboardView: View {
                             .foregroundColor(NikonTheme.textPrimary)
                     }
                     Spacer()
-                    Text("剩余 \(String(format: "%.1f", cameraState.cardTotalGB - cameraState.cardUsedGB)) GB")
+                    // v1.0.4：没从相机读到之前显示“--”，之前写死的 40.5GB 是假数
+                    Text(cameraState.storageKnown ? "剩余 \(String(format: "%.1f", cameraState.cardTotalGB - cameraState.cardUsedGB)) GB" : "剩余 -- GB")
                         .font(.system(size: 11, weight: .bold))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
@@ -274,20 +275,20 @@ public struct ControlDashboardView: View {
                 }
                 
                 HStack(alignment: .firstTextBaseline) {
-                    Text("\(String(format: "%.0f", cameraState.cardUsedGB)) / \(Int(cameraState.cardTotalGB)) GB")
+                    Text(cameraState.storageKnown ? "\(String(format: "%.0f", cameraState.cardUsedGB)) / \(Int(cameraState.cardTotalGB)) GB" : "-- / -- GB")
                         .font(.system(size: 26, weight: .black, design: .monospaced))
                         .foregroundColor(NikonTheme.textPrimary)
                     Spacer()
-                    Text("\(cameraState.cardUsagePercent)%")
+                    Text(cameraState.storageKnown ? "\(cameraState.cardUsagePercent)%" : "--%")
                         .font(.system(size: 16, weight: .bold, design: .monospaced))
                         .foregroundColor(NikonTheme.textSecondary)
                 }
                 
-                ProgressView(value: cameraState.cardUsedGB, total: cameraState.cardTotalGB)
+                ProgressView(value: cameraState.storageKnown ? cameraState.cardUsedGB : 0, total: cameraState.storageKnown ? cameraState.cardTotalGB : 1)
                     .tint(NikonTheme.accentBlue)
                     .scaleEffect(x: 1, y: 1.2, anchor: .center)
                 
-                Text("约可拍摄 \(cameraState.remainingShots) 张 RAW+JPG 高清照片")
+                Text(cameraState.storageKnown ? "约可拍摄 \(cameraState.remainingShots) 张 RAW+JPG 高清照片" : "正在读取存储卡…")
                     .font(.system(size: 12))
                     .foregroundColor(NikonTheme.textTertiary)
             }
@@ -308,7 +309,8 @@ public struct ControlDashboardView: View {
                             .foregroundColor(NikonTheme.textPrimary)
                     }
                     Spacer()
-                    Text("状态良好")
+                    // v1.0.4：没读到之前不写“状态良好”，之前默认 85% 是假数
+                    Text(cameraState.batteryKnown ? "状态良好" : "读取中…")
                         .font(.system(size: 11, weight: .bold))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
@@ -318,7 +320,7 @@ public struct ControlDashboardView: View {
                 }
                 
                 HStack(alignment: .firstTextBaseline) {
-                    Text("\(cameraState.batteryPercentage)%")
+                    Text(cameraState.batteryKnown ? "\(cameraState.batteryPercentage)%" : "--%")
                         .font(.system(size: 26, weight: .black, design: .monospaced))
                         .foregroundColor(NikonTheme.textPrimary)
                     Spacer()
@@ -327,7 +329,7 @@ public struct ControlDashboardView: View {
                         .foregroundColor(NikonTheme.textSecondary)
                 }
                 
-                ProgressView(value: Double(cameraState.batteryPercentage), total: 100.0)
+                ProgressView(value: Double(cameraState.batteryKnown ? cameraState.batteryPercentage : 0), total: 100.0)
                     .tint(NikonTheme.readyGreen)
                     .scaleEffect(x: 1, y: 1.2, anchor: .center)
             }
@@ -336,6 +338,15 @@ public struct ControlDashboardView: View {
             .cornerRadius(18)
             .overlay(RoundedRectangle(cornerRadius: 18).stroke(NikonTheme.borderDim, lineWidth: 1.5))
             .shadow(color: Color.black.opacity(0.03), radius: 10, x: 0, y: 3)
+            
+            // v1.0.4：PTP 诊断行——最近一次相机命令的结果，取景/参数出问题时这里会写原因
+            if !usbCamera.ptpDiagnostic.isEmpty {
+                Text("诊断：\(usbCamera.ptpDiagnostic)")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(NikonTheme.textTertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 4)
+            }
         }
     }
     

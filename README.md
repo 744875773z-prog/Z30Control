@@ -2,6 +2,20 @@
 
 一款专为**尼康 Z30（Nikon Z30）**设计的专业级 iOS 相机控制、3D LUT 胶片监看、无线相册与“按相机保护键自动速传”应用程序。
 
+## v1.0.4 修复说明（真机录屏发现的假数据与断链）
+
+真机症状（2026-11-21 实机录屏）：USB 连上显示“已连接”，但仪表盘存储 24/64GB、剩余 40.5GB、36%、2,840 张，电量 85%；取景一直黑屏；图库 0 张。根因仍在 App 代码：
+
+1. **存储和电量是假数**：`CameraState` 里写死 64GB/23.5GB/2840 张/85%，全工程没有任何地方读卡；拍一张变 2839 只是本地减 1。现在：USB 用 GetStorageIDs → GetStorageInfo (0x1005) 真读容量/剩余/可拍张数，电量用 GetDevicePropValue (0x5001) 真读并每 30 秒轮询；Wi-Fi 同样走 `PtpIpClient.getStorageInfo`/`getDevicePropValue`。读不到之前界面显示“--”，绝不编数。
+2. **快门按钮是假的**：点快门不发任何命令，只随机编个 `DSC_xxxx.JPG` 弹“拍摄完成”，相机根本没拍。现在：USB 发 InitiateCapture (0x100E)，Wi-Fi 发 `PtpIpClient.initiateCapture`；成功只代表“已触发”，成片随后经下载回调回显真图+真文件名。失败报原因。
+3. **图库 USB 下永远 0 张**：图库只走 Wi-Fi PTP/IP，USB 时那条路没连。现在 USB 下用 ImageCaptureCore 的卡目录（`usbMediaFiles`）喂图库，保存原图走 `requestDownloadFile`，NEF 也能存。
+4. **取景黑屏且不报错**：`startLiveView` 不管命令成没成都置“取景中”，帧不到就静默丢弃。现在：只在响应码 OK 时才算启动成功；启动后 3 秒无帧看门狗停掉并报错（相机须处于拍照模式）；每次取景失败原因写进 `liveViewError`/`ptpDiagnostic`，控制页和取景页都可见。
+5. **USB PTP 命令疑似全灭的根因待真机诊断**：之前属性读取全是“--”，怀疑点有三——(a) `capabilities` 门禁静默拦截了全部读取与取景（现只记日志，不再拦截）；(b) 事务 ID 从 1 起发，与 ImageCaptureCore 自己的会话撞号（现从 1000 起发）；(c) `requestSendPTPCommand` 的回包形态（数据容器 vs 仅响应包）。新加的 `sendPTPDataCommand` 把三种回包形态都处理了，诊断行会写明每次命令的结果，下次实测一眼定位。
+6. **调参选择器也是假的**：快门/光圈/ISO/EV 选完只改本地显示，谎称“已下发至机身”。现在走真实 SetDevicePropValue (0x1016，值走数据阶段），成功后才更新显示。
+7. **断开后旧数清零**：拔线后存储/电量回到未知状态，不留旧数冒充。
+
+> 提醒：`Tests/test_v104_flow.py` 的 9 项测试是等价 Python 客户端对着本地模拟器跑的，验证的是 Wi-Fi 侧新协议流程（GetStorageInfo / GetDevicePropValue / InitiateCapture / SetDevicePropValue）。USB（ImageCaptureCore）那条路在 Linux 上没有等价物，只能静态检查 + 真机实测。真机测试时请看控制页底部的“诊断”行和取景页的报错文案。
+
 ## v1.0.3 修复说明（真机联调发现的问题）
 
 真机症状：Wi-Fi 连上显示“已连接”，但取景黑屏、图库为空。根因不在相机/网络，在 App 代码：
