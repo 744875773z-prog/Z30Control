@@ -23,6 +23,11 @@ public struct CameraGalleryView: View {
     @State private var showBatchResult = false
     @State private var batchShare: ShareBatch?
     @State private var isBatchSharing = false
+    // v1.0.19：批量删除机内照片（删了就真没了，先弹确认框）
+    @State private var batchDeleting = false
+    @State private var showDeleteConfirm = false
+    @State private var batchDeleteResult: (Int, Int)?
+    @State private var showBatchDeleteResult = false
     
     public init() {}
     
@@ -118,12 +123,20 @@ public struct CameraGalleryView: View {
             }
             
             // v1.0.18：多选操作条（选图后批量保存到相册 / 批量分享）
+            // v1.0.19：加了批量删除（删机内照片，先弹确认框）
             if isSelecting {
                 HStack(spacing: 10) {
-                    Text(batchSaving ? "正在保存 \(batchProgress.0)/\(batchProgress.1)…" : isBatchSharing ? "正在取原图…" : "已选 \(selectedFilenames.count) 张")
+                    Text(batchSaving ? "正在保存 \(batchProgress.0)/\(batchProgress.1)…" : batchDeleting ? "正在删除 \(batchProgress.0)/\(batchProgress.1)…" : isBatchSharing ? "正在取原图…" : "已选 \(selectedFilenames.count) 张")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundColor(NikonTheme.textPrimary)
                     Spacer()
+                    Button("删除") {
+                        NikonTheme.triggerHaptic(style: .light)
+                        showDeleteConfirm = true
+                    }
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.red)
+                    .disabled(selectedFilenames.isEmpty || batchSaving || isBatchSharing || batchDeleting)
                     Button("取消") {
                         NikonTheme.triggerHaptic(style: .light)
                         isSelecting = false
@@ -137,7 +150,7 @@ public struct CameraGalleryView: View {
                     }
                     .font(.system(size: 14, weight: .bold))
                     .foregroundColor(NikonTheme.accentBlue)
-                    .disabled(selectedFilenames.isEmpty || batchSaving || isBatchSharing)
+                    .disabled(selectedFilenames.isEmpty || batchSaving || isBatchSharing || batchDeleting)
                     Button("保存到相册") {
                         NikonTheme.triggerHaptic(style: .light)
                         saveSelected()
@@ -146,9 +159,9 @@ public struct CameraGalleryView: View {
                     .foregroundColor(.white)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(selectedFilenames.isEmpty || batchSaving || isBatchSharing ? NikonTheme.textTertiary.opacity(0.4) : NikonTheme.accentBlue)
+                    .background(selectedFilenames.isEmpty || batchSaving || isBatchSharing || batchDeleting ? NikonTheme.textTertiary.opacity(0.4) : NikonTheme.accentBlue)
                     .cornerRadius(10)
-                    .disabled(selectedFilenames.isEmpty || batchSaving || isBatchSharing)
+                    .disabled(selectedFilenames.isEmpty || batchSaving || isBatchSharing || batchDeleting)
                 }
                 .padding(.horizontal, 18)
                 .padding(.vertical, 10)
@@ -175,6 +188,22 @@ public struct CameraGalleryView: View {
         } message: {
             if let r = batchResult {
                 Text(r.0 == r.1 ? "已存入手机 \(r.0) 张。" : "已存入手机 \(r.0) 张，失败 \(r.1 - r.0) 张（相机连接可能断了，可以再选一次）。")
+            }
+        }
+        // v1.0.19：批量删除确认 + 结果汇总（删了就真没了）
+        .alert("删除照片", isPresented: $showDeleteConfirm) {
+            Button("取消", role: .cancel) {}
+            Button("删除 \(selectedFilenames.count) 张", role: .destructive) {
+                deleteSelected()
+            }
+        } message: {
+            Text("将从相机存储卡中永久删除选中的 \(selectedFilenames.count) 张照片，无法恢复。")
+        }
+        .alert("删除完成", isPresented: $showBatchDeleteResult) {
+            Button("好的", role: .cancel) { batchDeleteResult = nil }
+        } message: {
+            if let r = batchDeleteResult {
+                Text(r.0 == r.1 ? "已删除 \(r.0) 张。" : "已删除 \(r.0) 张，失败 \(r.1 - r.0) 张（句柄映射表可能还没建好，或相机断了，可以再选一次）。")
             }
         }
     }
@@ -234,6 +263,27 @@ public struct CameraGalleryView: View {
                 self.batchShare = ShareBatch(urls: urls)
             }
         }
+    }
+
+    // v1.0.19：批量删除机内照片（先弹确认框，进来时已经确认过了）
+    private func deleteSelected() {
+        let items = selectedItems
+        guard !items.isEmpty else { return }
+        batchDeleting = true
+        batchProgress = (0, items.count)
+        syncService.deleteItems(items, progress: { done, total in
+            DispatchQueue.main.async { self.batchProgress = (done, total) }
+        }, completion: { succeeded, total in
+            DispatchQueue.main.async {
+                self.batchDeleting = false
+                self.batchDeleteResult = (succeeded, total)
+                self.showBatchDeleteResult = true
+                if succeeded == total {
+                    self.isSelecting = false
+                    self.selectedFilenames.removeAll()
+                }
+            }
+        })
     }
     
     // MARK: - 无照片时的纯净空状态
@@ -382,61 +432,88 @@ public struct CameraGalleryView: View {
     }
 }
 
-/// 照片导出与保存详情弹窗
+/// v1.0.19：照片显示方向固定——点开一张图后转横/转竖，记下来，
+/// 切页面、退后台、重启 App 都不变，直到再点旋转。存在 UserDefaults，
+/// 按文件名记（DSC_xxxx 不重名）。
+enum PhotoRotationStore {
+    static func rotation(for filename: String) -> Int {
+        UserDefaults.standard.integer(forKey: "z30.photoRotation.\(filename)")
+    }
+    static func setRotation(_ degrees: Int, for filename: String) {
+        UserDefaults.standard.set(degrees % 360, forKey: "z30.photoRotation.\(filename)")
+    }
+}
+
+/// 照片原图查看器（v1.0.19 重写）
+/// 点开一张图直接下原图显示（之前只显示 160px 小缩略图，糊）；保存和
+/// 分享不在这里——只在图库总页面多选里做。NEF 原图手机解不出来时退回
+/// 内嵌预览图。旋转按钮转 90°，记下来固定住，切页面也不变。
 public struct PhotoExportSheet: View {
     public let item: CameraMediaItem
     @ObservedObject var syncService = MediaSyncService.shared
     @Environment(\.presentationMode) var presentationMode
-    @State private var isSavedAlert = false
-    @State private var isSaving = false
-    @State private var savedOK: Bool?
-    // v1.0.17：详情预览图 + 系统分享
-    @State private var previewImage: UIImage?
-    @State private var shareItem: ShareItem?
-    @State private var isSharing = false
-    
+    // v1.0.19：原图 + 旋转 + 双指缩放
+    @State private var fullImage: UIImage?
+    @State private var isLoadingOriginal = true
+    @State private var loadFailed = false
+    @State private var rotation: Int = 0
+    @State private var scale: CGFloat = 1.0
+    @State private var lastScale: CGFloat = 1.0
+
     public init(item: CameraMediaItem) {
         self.item = item
     }
-    
+
     public var body: some View {
         NavigationView {
-            VStack(spacing: 20) {
-                // v1.0.17：有缩略图就显示真图（点进来的格子一般已经取到了），
-                // 没取到就显示占位信息。文件名和时间是相机给的——相机时钟
-                // 快几分钟，显示的时间就比手机快几分钟（去相机设定菜单校准）。
+            VStack(spacing: 16) {
                 Group {
-                    if let previewImage = previewImage {
-                        VStack(spacing: 8) {
-                            Image(uiImage: previewImage)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(height: 240)
-                                .frame(maxWidth: .infinity)
-                                .background(Color(red: 0.94, green: 0.95, blue: 0.97))
-                                .cornerRadius(12)
-                            Text(item.filename)
-                                .font(.system(size: 15, weight: .bold, design: .monospaced))
-                                .foregroundColor(NikonTheme.textPrimary)
-                            Text("\(item.formattedSize) · \(item.formattedTime)")
-                                .font(.system(size: 11))
-                                .foregroundColor(NikonTheme.textTertiary)
-                        }
+                    if let fullImage = fullImage {
+                        Image(uiImage: fullImage)
+                            .resizable()
+                            .scaledToFit()
+                            .rotationEffect(.degrees(Double(rotation)))
+                            .scaleEffect(scale)
+                            .gesture(
+                                MagnificationGesture()
+                                    .onChanged { value in
+                                        scale = max(1.0, min(4.0, lastScale * value))
+                                    }
+                                    .onEnded { _ in lastScale = scale }
+                            )
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(Color.black)
+                            .cornerRadius(12)
+                            .onTapGesture(count: 2) {
+                                withAnimation { scale = 1.0; lastScale = 1.0 }
+                            }
+                    } else if isLoadingOriginal {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color(red: 0.94, green: 0.95, blue: 0.97))
+                            .frame(height: 320)
+                            .overlay(
+                                VStack(spacing: 10) {
+                                    ProgressView()
+                                    Text("正在从相机下载原图…")
+                                        .font(.system(size: 13))
+                                        .foregroundColor(NikonTheme.textSecondary)
+                                }
+                            )
                     } else {
                         RoundedRectangle(cornerRadius: 12)
                             .fill(Color(red: 0.94, green: 0.95, blue: 0.97))
-                            .frame(height: 240)
+                            .frame(height: 320)
                             .overlay(
-                                VStack(spacing: 8) {
-                                    Image(systemName: "photo.fill")
-                                        .font(.system(size: 44))
-                                        .foregroundColor(NikonTheme.accentBlue.opacity(0.6))
-                                    Text(item.filename)
-                                        .font(.system(size: 15, weight: .bold, design: .monospaced))
-                                        .foregroundColor(NikonTheme.textPrimary)
-                                    Text("\(item.formattedSize) · \(item.formattedTime)")
-                                        .font(.system(size: 11))
+                                VStack(spacing: 10) {
+                                    Image(systemName: "exclamationmark.triangle")
+                                        .font(.system(size: 32))
                                         .foregroundColor(NikonTheme.textTertiary)
+                                    Text("原图没下下来，相机可能断了")
+                                        .font(.system(size: 13))
+                                        .foregroundColor(NikonTheme.textSecondary)
+                                    Button("再试一次") { loadOriginal() }
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundColor(NikonTheme.accentBlue)
                                 }
                             )
                     }
@@ -444,84 +521,49 @@ public struct PhotoExportSheet: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 16)
                 .onAppear {
-                    syncService.thumbnail(for: item) { data in
-                        guard let data = data, let image = UIImage(data: data) else { return }
-                        DispatchQueue.main.async { previewImage = image }
-                    }
+                    rotation = PhotoRotationStore.rotation(for: item.filename)
+                    loadOriginal()
                 }
-                
-                // 核心导出保存按钮
-                VStack(spacing: 12) {
-                    Button(action: {
-                        // v1.0.3：之前点保存只弹“保存成功”，其实什么都没存。
-                        // 现在真实从相机下载原图再存入相册。
-                        NikonTheme.triggerHaptic(style: .heavy)
-                        guard !isSaving else { return }
-                        isSaving = true
-                        syncService.downloadAndSaveToPhotos(item: item) { ok in
-                            DispatchQueue.main.async {
-                                isSaving = false
-                                savedOK = ok
-                                isSavedAlert = true
-                            }
-                        }
-                    }) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "square.and.arrow.down.fill")
-                            Text(isSaving ? "正在从相机下载…" : "无损保存原图到系统相册")
-                                .font(.system(size: 15, weight: .bold))
-                        }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 48)
-                        .background(NikonTheme.accentBlue)
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
-                        .shadow(color: NikonTheme.accentBlue.opacity(0.3), radius: 8, x: 0, y: 3)
-                    }
-                    .disabled(isSaving)
-                    
-                    Button(action: {
-                        NikonTheme.triggerHaptic(style: .light)
-                        guard !isSharing else { return }
-                        isSharing = true
-                        // v1.0.17：之前这个按钮只震一下，什么都不干。现在先把原图
-                        // 下到临时文件，再调系统分享（隔空投送/微信/保存到文件都在里面）。
-                        // 下不下来就不弹分享，不静默假装成功。
-                        syncService.downloadOriginalData(item: item) { data in
-                            DispatchQueue.main.async {
-                                isSharing = false
-                                guard let data = data else { return }
-                                let url = URL(fileURLWithPath: NSTemporaryDirectory())
-                                    .appendingPathComponent(item.filename)
-                                do {
-                                    try data.write(to: url)
-                                    shareItem = ShareItem(url: url)
-                                } catch {
-                                    // 写临时文件失败就不弹分享
-                                }
-                            }
-                        }
-                    }) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "square.and.arrow.up")
-                            Text(isSharing ? "正在准备分享文件…" : "隔空投送 / 系统分享")
-                                .font(.system(size: 14, weight: .bold))
-                        }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 44)
-                        .background(NikonTheme.bgSubtle)
+
+                VStack(spacing: 6) {
+                    Text(item.filename)
+                        .font(.system(size: 15, weight: .bold, design: .monospaced))
                         .foregroundColor(NikonTheme.textPrimary)
-                        .cornerRadius(12)
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(NikonTheme.borderDim, lineWidth: 1))
+                    Text("\(item.formattedSize) · \(item.formattedTime)")
+                        .font(.system(size: 11))
+                        .foregroundColor(NikonTheme.textTertiary)
+                }
+
+                // 旋转：横/竖显示切换后固定住（记下来，切页面也不变）
+                Button(action: {
+                    NikonTheme.triggerHaptic(style: .light)
+                    rotation = (rotation + 90) % 360
+                    PhotoRotationStore.setRotation(rotation, for: item.filename)
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "rotate.right")
+                        Text("旋转 90°（已转 \(rotation)°）")
+                            .font(.system(size: 14, weight: .bold))
                     }
-                    .disabled(isSharing)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .background(NikonTheme.bgSubtle)
+                    .foregroundColor(NikonTheme.textPrimary)
+                    .cornerRadius(12)
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(NikonTheme.borderDim, lineWidth: 1))
                 }
                 .padding(.horizontal, 16)
-                
+
+                Text("保存和分享在图库总页面：右上角“选择”，勾上照片后批量保存/分享。")
+                    .font(.system(size: 12))
+                    .foregroundColor(NikonTheme.textTertiary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+
                 Spacer()
             }
             .background(NikonTheme.bgPure.ignoresSafeArea())
-            .navigationTitle("素材选项")
+            .navigationTitle(item.filename)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -530,15 +572,32 @@ public struct PhotoExportSheet: View {
                     }
                 }
             }
-            .alert(isPresented: $isSavedAlert) {
-                Alert(
-                    title: Text(savedOK == true ? "保存成功" : "保存失败"),
-                    message: Text(savedOK == true ? "已将 \(item.filename) 成功存入 iPhone 系统相册！" : "下载失败，请确认相机仍处于连接状态后重试。"),
-                    dismissButton: .default(Text("好的"))
-                )
+        }
+    }
+
+    private func loadOriginal() {
+        isLoadingOriginal = true
+        loadFailed = false
+        fullImage = nil
+        syncService.downloadOriginalData(item: item) { data in
+            guard let data = data, let image = UIImage(data: data) else {
+                // 原图下不来或解不出来（NEF）：退回小缩略图，别空着
+                syncService.thumbnail(for: item) { thumbData in
+                    DispatchQueue.main.async {
+                        if let thumbData = thumbData, let thumb = UIImage(data: thumbData) {
+                            self.fullImage = thumb
+                            self.isLoadingOriginal = false
+                        } else {
+                            self.isLoadingOriginal = false
+                            self.loadFailed = true
+                        }
+                    }
+                }
+                return
             }
-            .sheet(item: $shareItem) { item in
-                ActivityShareView(activityItems: [item.url])
+            DispatchQueue.main.async {
+                self.fullImage = image
+                self.isLoadingOriginal = false
             }
         }
     }
@@ -548,6 +607,8 @@ public struct PhotoExportSheet: View {
 /// 是因为根本没人取过缩略图；现在格子露出来时懒加载取一张，取到就显示。
 /// v1.0.17：图库缩略图（懒加载 GetThumb）。v1.0.18 起模块内可见，
 /// 取景页的本次拍摄条也用它显示缩略图。
+/// v1.0.19：GetThumb 下不来时退回原图（下原图再缩到格子大小），不然
+/// 格子永久占位；显示方向跟详情页的旋转设置走（转了就固定住）。
 struct GalleryThumbImage: View {
     let item: CameraMediaItem
     @ObservedObject var syncService = MediaSyncService.shared
@@ -559,6 +620,7 @@ struct GalleryThumbImage: View {
                 Image(uiImage: thumb)
                     .resizable()
                     .scaledToFill()
+                    .rotationEffect(.degrees(Double(PhotoRotationStore.rotation(for: item.filename))))
             } else {
                 RoundedRectangle(cornerRadius: 10)
                     .fill(Color(red: 0.94, green: 0.95, blue: 0.97))
@@ -572,10 +634,28 @@ struct GalleryThumbImage: View {
         .onAppear {
             guard thumb == nil else { return }
             syncService.thumbnail(for: item) { data in
-                guard let data = data, let image = UIImage(data: data) else { return }
-                DispatchQueue.main.async { thumb = image }
+                if let data = data, let image = UIImage(data: data) {
+                    DispatchQueue.main.async { thumb = image }
+                    return
+                }
+                // v1.0.19：缩略图下不来（新照片句柄还没进映射表、NEF 没内嵌
+                // 预览），直接下原图缩到格子大小，总比占位图强。
+                syncService.downloadOriginalData(item: item) { raw in
+                    guard let raw = raw, let image = UIImage(data: raw) else { return }
+                    let small = Self.downscaled(image, maxDimension: 360)
+                    DispatchQueue.main.async { thumb = small }
+                }
             }
         }
+    }
+
+    static func downscaled(_ image: UIImage, maxDimension: CGFloat) -> UIImage {
+        let size = image.size
+        guard max(size.width, size.height) > maxDimension else { return image }
+        let scale = maxDimension / max(size.width, size.height)
+        let newSize = CGSize(width: size.width * scale, height: size.height * scale)
+        let renderer = UIGraphicsImageRenderer(size: newSize)
+        return renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: newSize)) }
     }
 }
 
@@ -584,11 +664,6 @@ struct GalleryThumbImage: View {
 struct ShareBatch: Identifiable {
     let id = UUID()
     let urls: [URL]
-}
-
-private struct ShareItem: Identifiable {
-    let id = UUID()
-    let url: URL
 }
 
 /// v1.0.17：UIActivityViewController 的 SwiftUI 包装。之前分享按钮

@@ -25,11 +25,6 @@ public struct LiveViewMonitorView: View {
     @State private var isShowingExpandedParams = false // 展开其余次要参数
     @State private var touchFocusPosition: CGPoint? = nil
     @State private var isFocusPulsing = false
-    @State private var isAfOnActive = false
-    // v1.0.16：AF-ON 对焦失败时按钮红闪 1.5s（绿=对焦中/已接受，红=相机拒答或没回音）。
-    @State private var afFailed = false
-    // 区分新旧两次对焦请求：回执和 5 秒超时只对最新的一次生效。
-    @State private var afRequestToken = UUID()
     @State private var instantPreviewName: String? = nil
     // v1.0.4：回显浮层的标题/副标题（之前写死“拍摄完成/已安全落盘”，快门本身是假的）
     @State private var previewTitle = "拍摄完成 · 即时预览 (2s)"
@@ -38,9 +33,6 @@ public struct LiveViewMonitorView: View {
     @State private var showingWiredHelp = false
     // v1.0.15：未连接空状态里的“连接 Wi-Fi 热点”入口，直接在本页弹出连接向导。
     @State private var showingConnectionWizard = false
-    // v1.0.18：拍摄条点一张打开的图库详情页（保存/分享）
-    @State private var selectedGalleryItem: CameraMediaItem?
-    @ObservedObject private var syncService = MediaSyncService.shared
     
     // 参数选择面板（v1.0.14：之前是系统 ActionSheet，iOS 27 上弹出后被底栏
     // 挡住大半、点不到值。现在改成页内自己的底部面板，永远在底栏上面。）
@@ -75,9 +67,6 @@ public struct LiveViewMonitorView: View {
                     portraitProHUD
                         .sheet(isPresented: $showingConnectionWizard) {
                             ConnectionWizardView()
-                        }
-                        .sheet(item: $selectedGalleryItem) { item in
-                            PhotoExportSheet(item: item)
                         }
                 }
 
@@ -127,11 +116,15 @@ public struct LiveViewMonitorView: View {
             wiredConnectionGuidanceSheet
         }
         .onAppear {
+            // v1.0.19：取景器强制横屏——用户横着拿手机当取景器，不想一直开
+            // 方向锁定。进页就转横，离页恢复竖屏（图库/控制页是竖的）。
+            OrientationLock.lockLandscape()
             // v1.0.3：之前这里只启动 USB 取景，Wi-Fi（PTP/IP）连上后从不发
             // StartLiveView，所以画面永远是黑的。现在按当前通路启动。
             startLiveViewForActiveTransport()
         }
         .onDisappear {
+            OrientationLock.unlockToPortrait()
             stopLiveViewForActiveTransport()
         }
         .onChange(of: connectionService.isConnected) { connected in
@@ -439,25 +432,13 @@ public struct LiveViewMonitorView: View {
                 Spacer()
 
                 if !isCleanScreen {
-                    // v1.0.14：本次拍摄缩略图条——之前画面和底栏之间是一大块纯黑
-                    // 空地。现在拍过的照片直接出现在这里，点一张进详情页保存/分享。
-                    // v1.0.18：速传删了，条里显示的是本次拍摄的照片在图库里的项目。
-                    if !sessionItems.isEmpty {
-                        recentShotsStrip
-                            .padding(.horizontal, 12)
-                            .padding(.bottom, 8)
-                    }
-
-                    // 底部 3D LUT 胶片模拟滤镜条
-                    lutFilterSelectorStrip
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 8)
-                    
-                    // 底部综合操作台 (清屏 DISP、AF-ON、大快门环、展开参数)
+                    // v1.0.19：本次拍摄条、滤镜条都不要了。底栏直接贴在 TabBar
+                    // 上面一点（之前 96pt 空一大截，快门键离底栏太远）。
                     portraitBottomControlDeck
                         .padding(.horizontal, 16)
-                        // v1.0.9：底栏改成悬浮玻璃胶囊后比旧贴底白条高约 10pt，预留从 88 改到 96
-                        .padding(.bottom, 96 + max(geo.safeAreaInsets.bottom - 20, 0)) // 预留底部 TabBar + 安全区
+                        // 底栏在 VStack 流里，取景页框底就是 TabBar 顶边，
+                        // 只留 12pt 间隙，快门键就贴在底栏上方。
+                        .padding(.bottom, 12 + max(geo.safeAreaInsets.bottom - 20, 0))
                 }
             }
         }
@@ -517,18 +498,6 @@ public struct LiveViewMonitorView: View {
                                     .background(Color.black.opacity(0.4))
                                     .clipShape(Circle())
                             }
-                            
-                            Button(action: {
-                                NikonTheme.triggerHaptic(style: .light)
-                                streamService.toggleLUT()
-                            }) {
-                                Image(systemName: "square.3.layers.3d.down.right.fill")
-                                    .font(.system(size: 15, weight: .bold))
-                                    .foregroundColor(streamService.isLUTEnabled ? NikonTheme.nikonYellow : .gray)
-                                    .frame(width: 34, height: 34)
-                                    .background(Color.black.opacity(0.4))
-                                    .clipShape(Circle())
-                            }
                         }
                     }
                     .padding(.leading, 16)
@@ -537,7 +506,7 @@ public struct LiveViewMonitorView: View {
                     
                     Spacer()
                     
-                    // 右翼：DISP、滤镜滑条、AF-ON、大快门环
+                    // 右翼：DISP、大快门环（v1.0.19：AF-ON 不要了）
                     VStack(alignment: .trailing, spacing: 14) {
                         // 顶部 DISP 清屏按键
                         Button(action: {
@@ -560,20 +529,6 @@ public struct LiveViewMonitorView: View {
                         }
                         
                         Spacer()
-                        
-                        // AF-ON 椭圆对焦胶囊按钮（v1.0.16：真的发 AfDrive 对焦，
-                        // 绿=对焦中，红闪=相机拒答或没回音）
-                        Button(action: {
-                            triggerAutofocus()
-                        }) {
-                            Text("AF-ON")
-                                .font(.system(size: 13, weight: .black))
-                                .foregroundColor(isAfOnActive ? .black : (afFailed ? .white : NikonTheme.nikonYellow))
-                                .frame(width: 76, height: 38)
-                                .background(isAfOnActive ? NikonTheme.readyGreen : (afFailed ? NikonTheme.tallyRed : Color.black.opacity(0.5)))
-                                .cornerRadius(19)
-                                .overlay(RoundedRectangle(cornerRadius: 19).stroke(isAfOnActive ? NikonTheme.readyGreen : (afFailed ? NikonTheme.tallyRed : NikonTheme.nikonYellow), lineWidth: 2))
-                        }
                         
                         // 大拇指主快门环 (半透明设计，零遮挡)
                         Button(action: {
@@ -795,103 +750,7 @@ public struct LiveViewMonitorView: View {
         .buttonStyle(PlainButtonStyle())
     }
 
-    /// v1.0.18：本次拍摄的照片（按文件名从图库里取）。拍完照成片直接进图库，
-    /// 这里只显示这次联机拍过的那几张。
-    private var sessionItems: [CameraMediaItem] {
-        syncService.mediaItems.filter { usbCamera.sessionCapturedFilenames.contains($0.filename) }
-    }
-
-    // MARK: - v1.0.14：本次拍摄缩略图条（点一张进详情页保存/分享）
-    private var recentShotsStrip: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Text("本次拍摄 \(sessionItems.count) 张")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(.white)
-                Spacer()
-                if cameraState.storageKnown {
-                    Text("卡剩余 \(String(format: "%.1f", max(cameraState.cardTotalGB - cameraState.cardUsedGB, 0))) GB")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.white.opacity(0.6))
-                }
-                if cameraState.batteryKnown {
-                    Text("电量 \(cameraState.batteryPercentage)%")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.white.opacity(0.6))
-                }
-            }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(sessionItems, id: \.id) { item in
-                        Button(action: {
-                            NikonTheme.triggerHaptic(style: .light)
-                            selectedGalleryItem = item
-                        }) {
-                            GalleryThumbImage(item: item)
-                                .frame(width: 64, height: 48)
-                                .cornerRadius(8)
-                                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.25), lineWidth: 0.8))
-                                .clipped()
-                        }
-                    }
-                }
-                .padding(.horizontal, 2)
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color.black.opacity(0.6))
-        .cornerRadius(14)
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.12), lineWidth: 0.8))
-    }
-
-    // MARK: - 3D LUT 胶片模拟滤镜水平滚轴
-    private var allDisplayFilters: [LUTFilter] {
-        return LUTFilter.builtinPresets + LUTStorageManager.shared.customFilters
-    }
-    
-    private var lutFilterSelectorStrip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                // 原画 (无 LUT)
-                lutPill(name: "原片 (Off)", isSelected: !streamService.isLUTEnabled) {
-                    streamService.isLUTEnabled = false
-                    streamService.setFilter(nil)
-                }
-                
-                // 各款胶片滤镜
-                ForEach(allDisplayFilters) { (filter: LUTFilter) in
-                    let selected = streamService.isLUTEnabled && streamService.activeFilter?.id == filter.id
-                    lutPill(name: filter.name, isSelected: selected) {
-                        streamService.isLUTEnabled = true
-                        streamService.setFilter(filter)
-                    }
-                }
-            }
-            .padding(.horizontal, 4)
-        }
-        .padding(.vertical, 6)
-        .background(Color.black.opacity(0.6))
-        .cornerRadius(16)
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.12), lineWidth: 0.8))
-    }
-    
-    private func lutPill(name: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: {
-            NikonTheme.triggerHaptic(style: .light)
-            action()
-        }) {
-            Text(name)
-                .font(.system(size: 11, weight: isSelected ? .bold : .medium))
-                .foregroundColor(isSelected ? .black : .white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(isSelected ? NikonTheme.nikonYellow : Color.white.opacity(0.1))
-                .cornerRadius(10)
-        }
-    }
-    
-    // MARK: - 底部操作行 (清屏 DISP + AF-ON + 全屏大快门)
+    // MARK: - 底部操作行 (清屏 DISP + 全屏大快门，v1.0.19：AF-ON 不要了)
     private var portraitBottomControlDeck: some View {
         HStack(spacing: 20) {
             // DISP 清屏按键
@@ -915,19 +774,6 @@ public struct LiveViewMonitorView: View {
             }
             
             Spacer()
-            
-            // AF-ON 按钮（v1.0.16：真的发 AfDrive 对焦，绿=对焦中，红闪=相机拒答或没回音）
-            Button(action: {
-                triggerAutofocus()
-            }) {
-                Text("AF-ON")
-                    .font(.system(size: 13, weight: .black))
-                    .foregroundColor(isAfOnActive ? .black : (afFailed ? .white : NikonTheme.nikonYellow))
-                    .frame(width: 78, height: 42)
-                    .background(isAfOnActive ? NikonTheme.readyGreen : (afFailed ? NikonTheme.tallyRed : Color.black.opacity(0.6)))
-                    .cornerRadius(21)
-                    .overlay(RoundedRectangle(cornerRadius: 21).stroke(isAfOnActive ? NikonTheme.readyGreen : (afFailed ? NikonTheme.tallyRed : NikonTheme.nikonYellow), lineWidth: 2))
-            }
             
             // 主快门按钮
             Button(action: {
@@ -1061,46 +907,8 @@ public struct LiveViewMonitorView: View {
     // 还顺手把剩余张数减 1。相机根本没拍。
     // 现在：发拍摄命令；成功只代表“已触发”，成片随后进图库（didAdd 或
     // 2.5s/6s 拍后复查）。失败则报原因。
-    // MARK: - v1.0.16：AF-ON 真对焦（之前是假的，只亮 0.6 秒绿灯）
-    /// 按下对画面中心发 AfDrive (0x90C1)。绿=对焦中（相机回 0x2001 后熄灭），
-    /// 红闪=相机拒答、没回音或根本没连相机。5 秒没回执也算失败——Wi-Fi 那条
-    /// 路发包失败时 completion 可能不回调，不能让绿灯一直亮着。
-    private func triggerAutofocus() {
-        NikonTheme.triggerHaptic(style: .heavy)
-        guard isDeviceConnected else {
-            afFailed = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { self.afFailed = false }
-            return
-        }
-        isAfOnActive = true
-        afFailed = false
-        let token = UUID()
-        afRequestToken = token
-        let done: (Bool) -> Void = { ok in
-            DispatchQueue.main.async {
-                guard self.afRequestToken == token else { return }
-                self.isAfOnActive = false
-                if !ok { self.flashAfFailed() }
-            }
-        }
-        if usbCamera.isUsbConnected {
-            usbCamera.driveAutofocusAtCenter(completion: done)
-        } else if connectionService.isConnected {
-            connectionService.client.driveAutofocusAtCenter { ok, _ in done(ok) }
-        } else {
-            done(false)
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-            guard self.afRequestToken == token, self.isAfOnActive else { return }
-            self.isAfOnActive = false
-            self.flashAfFailed()
-        }
-    }
-
-    private func flashAfFailed() {
-        afFailed = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { self.afFailed = false }
-    }
+    // v1.0.19：AF-ON 不要了（triggerAutofocus / driveAutofocusAtCenter
+    // 都删了；点画面对焦还留着，走 Wi-Fi 的 driveAutofocus）。
 
     private func triggerShutterCapture() {
         guard !isCapturing else { return }
@@ -1112,7 +920,7 @@ public struct LiveViewMonitorView: View {
                     self.isCapturing = false
                     if ok {
                         // v1.0.18：速传删了，不再等下载回显。触发成功就提示一声，
-                        // 成片 2.5s/6s 后进图库和拍摄条。
+                        // 成片 2.5s/6s 后进图库。
                         self.showPreview(
                             filename: nil,
                             title: "快门已触发",

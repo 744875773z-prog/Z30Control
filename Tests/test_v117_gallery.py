@@ -5,9 +5,11 @@ Yuan 2026-11-21 18:19-18:26 连报四个问题：
 2. （v1.0.18 已删速传）原 -9934 根因：didAdd 下载时取景 20fps 还在抢
    PTP 通道；且 ICC 失败后复查那条路直接忽略结果。现在 didAdd 不再下载，
    拍后复查只把新文件插进图库；图库保存的下载仍先停帧再下。
-3. 素材选项页：分享按钮只震一下什么都不干；下载失败时 completion
-   永远不调，按钮“正在从相机下载…”转到天荒地老；时间比手机快 10
-   分钟是相机时钟快（相机设定菜单校准），不是 App 算错。
+3. 素材选项页：v1.0.17 时分享按钮只震一下什么都不干；下载失败时
+   completion 永远不调，按钮“正在从相机下载…”转到天荒地老；时间比手
+   机快 10 分钟是相机时钟快（相机设定菜单校准），不是 App 算错。
+   v1.0.19：详情页改成原图查看器（直接下原图，NEF 退回内嵌预览图），
+   保存/分享按钮都撤了，只在图库总页面多选里做。
 4. 控制页电池下面挂着“诊断：0x1015 → 数据在 first…”看着像报错——
    其实是读成功的底层日志，每次读属性都往可见行里写。
 
@@ -101,8 +103,10 @@ def run():
     check("格子用 GalleryThumbImage", "GalleryThumbImage(item: item)" in gallery)
     check("列表也用 GalleryThumbImage",
           gallery.count("GalleryThumbImage(item: item)") >= 2)
-    check("详情预览也取缩略图",
-          "previewImage" in gallery and "thumbnail(for: item)" in gallery)
+    check("详情页直接下原图显示（不再只看缩略图）",
+          "downloadOriginalData(item: item)" in gallery and "fullImage" in gallery)
+    check("NEF 原图解不出来退回缩略图",
+          "退回小缩略图" in gallery)
 
     print("== 速传已删：不再自动下载，拍后复查只插图库 ==")
     check("暂停改成计数式", "liveViewPauseCount" in usb)
@@ -127,8 +131,8 @@ def run():
           "UIActivityViewController" in gallery)
     check("分享先把原图下到临时文件",
           "downloadOriginalData(item: item)" in gallery and "NSTemporaryDirectory()" in gallery)
-    check("分享按钮不再是空震动",
-          "之前这个按钮只震一下" in gallery)
+    check("图库批量分享走 downloadItemsData + ShareBatch",
+          "syncService.downloadItemsData" in gallery and "ShareBatch" in gallery)
 
     print("== 诊断行：只在真报错时显示 ==")
     check("ptpDiagnosticIsError 存在", "ptpDiagnosticIsError" in usb)
@@ -157,7 +161,7 @@ def run():
     check("成功日志不是错",
           not is_error("0x1015 → 数据在 first（裸数据）(first 1B / second 12B)，响应 0x2001"))
     check("下载失败是错", is_error("下载失败：未能完成操作。"))
-    check("对焦被拒是错", is_error("对焦被拒 0x2008"))
+    check("删除被拒是错", is_error("删除被拒 0x2009"))
     check("拍后复查跳过是错", is_error("拍后复查跳过：拍前卡快照没读到，只靠相机推送"))
 
     print("== 纯逻辑：下载兜底链 ==")

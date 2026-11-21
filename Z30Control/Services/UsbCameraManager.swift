@@ -33,6 +33,7 @@ private enum NikonPTPOpCode: UInt16 {
     case getDevicePropValue  = 0x1015 // 读取设备属性值
     case setDevicePropValue  = 0x1016 // 设置设备属性值
     case initiateCapture     = 0x100E // 触发快门拍摄
+    case deleteObject        = 0x100B // 删除对象（图库批量删机内照片）
     case nikonStartLiveView  = 0x9201 // 开启实时取景
     case nikonEndLiveView    = 0x9202 // 结束实时取景
     case nikonGetLiveViewImg = 0x9203 // 拉取实时取景帧
@@ -55,9 +56,6 @@ public final class UsbCameraManager: NSObject, ObservableObject,
     // MARK: - Published 状态
     @Published public var isUsbConnected: Bool = false
     @Published public var connectedDeviceName: String = ""
-    // v1.0.18：速传删了，不再下载成片进速传列表。只记“本次拍摄”的文件名，
-    // 取景页的拍摄条按文件名从图库里取对应项目显示（缩略图走 GetThumb）。
-    @Published public var sessionCapturedFilenames: Set<String> = []
 
     // Live View 状态
     @Published public var isLiveViewStreaming: Bool = false
@@ -247,8 +245,7 @@ public final class UsbCameraManager: NSObject, ObservableObject,
                 }
                 self.usbMediaFiles = all
                 // v1.0.18：速传删了，不再自动下载。成片直接进图库列表
-                // （下面重建图库），取景页的拍摄条按文件名认它。
-                for f in newFiles { if let n = f.name { self.sessionCapturedFilenames.insert(n) } }
+                // （下面重建图库）。
                 // v1.0.14：新照片进了目录，图库列表也要跟着重建，否则图库页
                 // 还是旧的那份，看不到刚拍的。
                 MediaSyncService.shared.refreshFromUSB()
@@ -421,7 +418,6 @@ public final class UsbCameraManager: NSObject, ObservableObject,
             if let payload = payload, let filename = Self.parseObjectInfoFilename(payload), !filename.isEmpty {
                 let size = Self.parseObjectInfoSize(payload)
                 MediaSyncService.shared.insertCapturedItem(filename: filename, sizeBytes: size, ptpHandle: handle)
-                DispatchQueue.main.async { self.sessionCapturedFilenames.insert(filename) }
             } else {
                 print("[UsbCameraManager] 新对象 0x\(String(handle, radix: 16)) 读不到文件名（响应 \(code.map { String(format: "0x%04X", $0) } ?? "无")）")
             }
@@ -1229,22 +1225,21 @@ public final class UsbCameraManager: NSObject, ObservableObject,
         }
     }
 
-    // MARK: - AF-ON：中心点自动对焦（带回执）
-    /// AfDrive (0x90C1，见 Wireshark packet-ptpip.h：PTP_OC_NIKON_AfDrive）
-    /// 驱动自动对焦，参数为对焦平面坐标（0~10000）。AF-ON 对画面中心对焦：
-    /// x=y=5000。回执 0x2001=OK；相机在手动对焦或未取景时可能拒答。
-    /// 发命令前先停取景帧拉取（和 setCameraProp 一样，不然命令要排在 20fps
-    /// 的取景帧后面等很久）。
-    public func driveAutofocusAtCenter(completion: ((Bool) -> Void)? = nil) {
+    // MARK: - v1.0.19：删除机内照片（DeleteObject 0x100B，图库批量删除用）
+    /// 按句柄删卡里一张照片。无数据阶段，响应 0x2001=删掉了，其他=没删成
+    /// （0x2009=句柄不存在）。发命令前先停取景帧拉取，和调参/对焦一样，
+    /// 不然命令要排在 20fps 的取景帧后面等很久。删完恢复取景。
+    /// 注意：删了就真没了，调用方（图库多选删除）必须先弹确认框。
+    public func deleteObject(handle: UInt32, completion: ((Bool) -> Void)? = nil) {
         guard let camera = activeCamera, isUsbConnected else { completion?(false); return }
         pauseLiveViewFetching()
-        let cmd = buildPTPCommandPacket(opCode: NikonPTPOpCode.afDrive.rawValue,
-                                        params: [5000, 5000])
+        let cmd = buildPTPCommandPacket(opCode: NikonPTPOpCode.deleteObject.rawValue,
+                                        params: [handle])
         camera.requestSendPTPCommand(cmd, outData: nil) { [weak self] (_, responseData, error) in
             // 恢复取景（在主线程，因为要重建 Timer）
             DispatchQueue.main.async { [weak self] in self?.resumeLiveViewFetching() }
             guard error == nil else {
-                self?.setDiagnostic("对焦出错：\(error!.localizedDescription)")
+                self?.setDiagnostic("删除出错：\(error!.localizedDescription)")
                 completion?(false)
                 return
             }
@@ -1257,7 +1252,7 @@ public final class UsbCameraManager: NSObject, ObservableObject,
             }
             let ok = respCode == nil || respCode == 0x2001
             if !ok {
-                self?.setDiagnostic(String(format: "对焦被拒 0x%04X", respCode!))
+                self?.setDiagnostic(String(format: "删除被拒 0x%04X", respCode!))
             }
             completion?(ok)
         }

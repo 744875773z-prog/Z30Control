@@ -17,6 +17,8 @@ UIImage 解不出来，速传条根本没法显示）。
    “分享”/“取消”，批量保存一张一张串行下，失败的最后汇总报数。
 5. 取景页“本次拍摄”条改从图库取本次拍摄的照片（文件名集合），缩略图
    走 GetThumb（NEF 也有内嵌 JPEG 预览），点一张进详情页保存/分享。
+   v1.0.19：拍摄条、AF-ON、滤镜条都不要了（用户 2026-11-21 19:22
+   要求），这条回归检查改成“都删干净了”。
 6. 快门成功不再等下载回显，直接弹“快门已触发，成片见图库”。
 
 这里验源码接线 + 纯逻辑镜像（插入去重、批量进度、大小解析）+ 模拟器
@@ -100,10 +102,9 @@ def run():
     check("rescanCardForNewPhotos 已删", "rescanCardForNewPhotos" not in usb)
     check("fetchNewCapturedFiles 已删", "fetchNewCapturedFiles" not in usb)
     check("不再自动存入手机相册", "UIImageWriteToSavedPhotosAlbum" not in usb)
-    check("本次拍摄只记文件名集合", "sessionCapturedFilenames" in usb)
-    check("didAdd 只记文件名 + 重建图库 + 刷新存储",
-          "sessionCapturedFilenames.insert" in usb
-          and "MediaSyncService.shared.refreshFromUSB()" in usb)
+    check("didAdd 重建图库 + 刷新存储",
+          "MediaSyncService.shared.refreshFromUSB()" in usb
+          and "refreshStorageInfo()" in usb)
     check("拍后复查插进图库（insertNewCapturedFiles）",
           "insertNewCapturedFiles" in usb and "insertCapturedItem" in usb)
     check("大小解析按布局分流（parseObjectInfoSize）",
@@ -120,6 +121,8 @@ def run():
           "func saveItems" in media and "progress(index + 1, items.count)" in media)
     check("downloadItemsData 存在（串行取原图）",
           "func downloadItemsData" in media)
+    check("刚拍的照片钉住防刷新冲掉（v1.0.19）",
+          "pinnedCapturedItems" in media and "mergePinned" in media)
 
     print("== 图库：多选 + 底部操作条 ==")
     check("多选状态存在", "isSelecting" in gallery and "selectedFilenames" in gallery)
@@ -134,15 +137,18 @@ def run():
     check("批量分享走 downloadItemsData", "syncService.downloadItemsData" in gallery)
     check("批量结果有汇总提示", "showBatchResult" in gallery and "已存入手机" in gallery)
     check("多选分享用 ShareBatch", "ShareBatch" in gallery)
-    check("GalleryThumbImage 模块内可见（供拍摄条用）",
+    check("GalleryThumbImage 模块内可见",
           "struct GalleryThumbImage: View" in gallery and "private struct GalleryThumbImage" not in gallery)
+    check("多选条有删除按钮（v1.0.19）",
+          '"删除"' in gallery and "showDeleteConfirm" in gallery)
+    check("批量删除走 deleteItems（确认框 + 汇总）",
+          "syncService.deleteItems" in gallery and "showBatchDeleteResult" in gallery)
 
-    print("== 取景页：拍摄条改从图库取，点开进详情 ==")
-    check("sessionItems 按文件名从图库取",
-          "sessionCapturedFilenames.contains($0.filename)" in live)
-    check("拍摄条用 GalleryThumbImage", "GalleryThumbImage(item: item)" in live)
-    check("点拍摄条打开详情页", "selectedGalleryItem = item" in live
-          and "PhotoExportSheet(item: item)" in live)
+    print("== 取景页：拍摄条/AF-ON/滤镜都删了（v1.0.19）==")
+    check("本次拍摄条已删", "recentShotsStrip" not in live and "sessionItems" not in live)
+    check("AF-ON 按钮已删", 'Text("AF-ON")' not in live and "triggerAutofocus()" not in live)
+    check("滤镜条已删",
+          "lutFilterSelectorStrip" not in live and "lutPill" not in live)
     check("快门成功直接弹提示（不再等下载回显）",
           "快门已触发" in live and "已触发，成片见图库" in live)
     check("旧文案已清（速传中/全屏回显并存入手机）",

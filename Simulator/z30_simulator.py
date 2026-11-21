@@ -42,6 +42,7 @@ OP_GET_OBJECT_HANDLES = 0x1007
 OP_GET_OBJECT_INFO = 0x1008
 OP_GET_OBJECT = 0x1009
 OP_GET_THUMB = 0x100A
+OP_DELETE_OBJECT = 0x100B
 OP_INITIATE_CAPTURE = 0x100E
 OP_GET_DEVICE_PROP_VALUE = 0x1015
 OP_SET_DEVICE_PROP_VALUE = 0x1016
@@ -53,6 +54,7 @@ OP_NIKON_AF_DRIVE = 0x90C1
 # 响应码
 RC_OK = 0x2001
 RC_GENERAL_ERROR = 0x2002
+RC_INVALID_OBJECT_HANDLE = 0x2009
 
 def make_test_jpeg():
     header = b'\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x01\x00H\x00H\x00\x00'
@@ -258,6 +260,18 @@ class NikonZ30Simulator:
         elif op_code == OP_GET_OBJECT or op_code == OP_GET_THUMB:
             self.send_data_payload(sock, trans_id, TEST_JPEG)
             self.send_cmd_response(sock, RC_OK, trans_id)
+
+        # 6b. 删除对象 (DeleteObject 0x100B，v1.0.19 新增：图库批量删除)
+        elif op_code == OP_DELETE_OBJECT:
+            obj_id = params[0] if params else 0
+            if obj_id in self.media_db:
+                name = self.media_db[obj_id]["name"]
+                del self.media_db[obj_id]
+                print(f"[Z30 模拟器] 🗑️ 已删除对象 {obj_id} {name}")
+                self.send_cmd_response(sock, RC_OK, trans_id)
+            else:
+                print(f"[Z30 模拟器] 🗑️ 删除失败：句柄 {obj_id} 不存在")
+                self.send_cmd_response(sock, RC_INVALID_OBJECT_HANDLE, trans_id)
             
         # 7. 设置优化校准与硬件属性 (SetDevicePropValue 0x1016)
         elif op_code == OP_SET_DEVICE_PROP_VALUE:

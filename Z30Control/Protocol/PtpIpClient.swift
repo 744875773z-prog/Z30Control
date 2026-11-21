@@ -309,8 +309,21 @@ public final class PtpIpClient {
     /// AfDrive (0x90C1，见 Wireshark packet-ptpip.h 的 PTP_OC_NIKON_AfDrive）
     /// 驱动自动对焦，参数为对焦平面坐标（0~10000）。AF-ON 对画面中心对焦：
     /// x=y=5000。回执 0x2001=OK；相机在手动对焦或未取景时可能拒答。
-    public func driveAutofocusAtCenter(completion: ((Bool, UInt16?) -> Void)? = nil) {
-        driveAutofocus(x: 5000, y: 5000, completion: completion)
+    // MARK: - v1.0.19：删除机内照片（DeleteObject 0x100B，图库批量删除用）
+    /// 按句柄删卡里一张照片。响应 0x2001=删掉了，其他=没删成。
+    /// 注意：删了就真没了，调用方（图库多选删除）必须先弹确认框。
+    public func deleteObject(handle: UInt32, completion: ((Bool, UInt16?) -> Void)? = nil) {
+        guard isSessionOpen else { completion?(false, nil); return }
+        let packet = PtpIpPacket.makeCmdRequest(
+            opCode: PtpOperationCode.deleteObject.rawValue,
+            transactionId: nextTransactionId(),
+            params: [handle]
+        )
+        sendCmdPacket(packet) { [weak self] resp in
+            guard let self = self else { completion?(false, nil); return }
+            let code = self.cmdResponseCode(resp)
+            completion?(code == PtpResponseCode.ok.rawValue, code)
+        }
     }
 
     public func driveAutofocus(x: UInt32, y: UInt32, completion: ((Bool, UInt16?) -> Void)? = nil) {

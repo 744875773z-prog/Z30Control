@@ -63,8 +63,18 @@ public final class MediaSyncService: ObservableObject {
     // 所以取图走串行队列，一次只取一张。
     private var thumbCache: [UInt32: Data] = [:]
     private var thumbInFlight: Set<UInt32> = []
+    private var thumbWaiters: [UInt32: [(Data?) -> Void]] = [:]
     private var thumbPending: [(item: CameraMediaItem, completion: (Data?) -> Void)] = []
     private let thumbQueue = DispatchQueue(label: "com.z30control.thumbs.serial", qos: .utility)
+
+    // v1.0.19：钉住刚拍的照片——拍后复查插进来的项目，在下一次目录刷新
+    // （ICC 目录投递慢、新文件还没进目录）时会被整表替换冲掉，图库里
+    // 就看不到刚拍的照片。钉住的项目在刷新后重新合并到列表最前面，
+    // 直到它出现在目录里为止（最多钉 50 张）。
+    private var pinnedCapturedItems: [CameraMediaItem] = []
+
+    // v1.0.19：等句柄映射表建好的回调（批量删除要用映射表翻译句柄）。
+    private var handleMapWaiters: [() -> Void] = []
     
     private var ptpClient: PtpIpClient { CameraConnectionService.shared.client }
     
@@ -230,7 +240,24 @@ public final class MediaSyncService: ObservableObject {
             self.fetchedItems.insert(item, at: 0)
             self.mediaItems.insert(item, at: 0)
             self.stats.indexedTotalFiles = self.fetchedItems.count
+            // v1.0.19：钉住刚拍的照片，防下一次目录刷新把它冲掉。
+            if !self.pinnedCapturedItems.contains(where: { $0.filename == filename }) {
+                self.pinnedCapturedItems.insert(item, at: 0)
+                if self.pinnedCapturedItems.count > 50 { self.pinnedCapturedItems.removeLast() }
+            }
         }
+    }
+
+    /// v1.0.19：目录刷新时把钉住的刚拍照片合并回列表最前面（目录里还没
+    /// 有它才补）；已经进目录的就不再钉住。调用方都在主线程。
+    private func mergePinned(into ordered: [CameraMediaItem]) -> [CameraMediaItem] {
+        let missing = pinnedCapturedItems.filter { p in
+            !ordered.contains(where: { $0.filename == p.filename })
+        }
+        pinnedCapturedItems.removeAll { p in
+            ordered.contains(where: { $0.filename == p.filename })
+        }
+        return missing + ordered
     }
 
     /// v1.0.18：批量保存（图库多选）。一张一张串行下，防 PTP 拥塞；
@@ -260,6 +287,61 @@ public final class MediaSyncService: ObservableObject {
             }
         }
         next(0)
+    }
+
+    /// v1.0.19：批量删除机内照片（图库多选）。一张一张串行删，防 PTP 拥塞；
+    /// 每删一张调一次 progress（已删张数/总数），最后调 completion（成功张数/总数）。
+    /// 删掉的立刻从列表、缩略图缓存和已拍钉住列表里去掉。句柄优先用项目
+    /// 自带的，没有就查文件名→句柄映射表；映射表还没建好就等它建好再删
+    /// （建表只跑一次，不会每张都等）。
+    public func deleteItems(_ items: [CameraMediaItem], progress: @escaping (Int, Int) -> Void, completion: @escaping (Int, Int) -> Void) {
+        let needsMap = items.contains { $0.ptpHandle == nil && filenameHandleMap[$0.filename] == nil }
+        if needsMap && UsbCameraManager.shared.isUsbConnected {
+            handleMapWaiters.append { [weak self] in
+                guard let self = self else { return }
+                self.deleteItemsResolved(items, progress: progress, completion: completion)
+            }
+            ensureFilenameHandleMap()
+            return
+        }
+        deleteItemsResolved(items, progress: progress, completion: completion)
+    }
+
+    private func deleteItemsResolved(_ items: [CameraMediaItem], progress: @escaping (Int, Int) -> Void, completion: @escaping (Int, Int) -> Void) {
+        var succeeded = 0
+        func next(_ index: Int) {
+            guard index < items.count else { completion(succeeded, items.count); return }
+            progress(index + 1, items.count)
+            let item = items[index]
+            deleteOne(item) { ok in
+                if ok {
+                    succeeded += 1
+                    DispatchQueue.main.async {
+                        self.mediaItems.removeAll { $0.filename == item.filename }
+                        self.fetchedItems.removeAll { $0.filename == item.filename }
+                        self.thumbCache.removeValue(forKey: item.id)
+                        self.pinnedCapturedItems.removeAll { $0.filename == item.filename }
+                        self.stats.indexedTotalFiles = self.fetchedItems.count
+                    }
+                }
+                next(index + 1)
+            }
+        }
+        next(0)
+    }
+
+    private func deleteOne(_ item: CameraMediaItem, completion: @escaping (Bool) -> Void) {
+        if UsbCameraManager.shared.isUsbConnected {
+            guard let handle = item.ptpHandle ?? filenameHandleMap[item.filename] else {
+                completion(false)
+                return
+            }
+            UsbCameraManager.shared.deleteObject(handle: handle, completion: completion)
+            return
+        }
+        // Wi-Fi：句柄就是 PTP 列卡时的 id（映射表兜底）
+        let handle = item.ptpHandle ?? filenameHandleMap[item.filename] ?? item.id
+        ptpClient.deleteObject(handle: handle) { ok, _ in completion(ok) }
     }
     
     /// JPEG/视频存入系统相册；NEF 无法直接写入相册，存到 App 文稿目录
@@ -325,9 +407,11 @@ public final class MediaSyncService: ObservableObject {
         // 文件名 DSC_xxxx 递增即拍摄顺序，倒序后最新在前
         let ordered = items.sorted(by: { $0.filename > $1.filename })
         DispatchQueue.main.async {
-            self.fetchedItems = ordered
+            // v1.0.19：钉住的刚拍照片合并回来（目录投递慢时它还没进目录）。
+            let merged = self.mergePinned(into: ordered)
+            self.fetchedItems = merged
             self.isSyncingIndex = false
-            self.stats.indexedTotalFiles = ordered.count
+            self.stats.indexedTotalFiles = merged.count
             self.currentPage = 0
             self.hasMorePages = true
             self.mediaItems.removeAll()
@@ -356,9 +440,11 @@ public final class MediaSyncService: ObservableObject {
                 )
             }
             DispatchQueue.main.async {
-                self.fetchedItems = items
+                // v1.0.19：钉住的刚拍照片合并回来（PTP 列卡还没看到它时）。
+                let merged = self.mergePinned(into: items)
+                self.fetchedItems = merged
                 self.isSyncingIndex = false
-                self.stats.indexedTotalFiles = items.count
+                self.stats.indexedTotalFiles = merged.count
                 self.currentPage = 0
                 self.hasMorePages = true
                 self.mediaItems.removeAll()
@@ -381,6 +467,10 @@ public final class MediaSyncService: ObservableObject {
             DispatchQueue.main.async {
                 self.filenameHandleMap = map
                 self.handleMapLoading = false
+                // v1.0.19：等映射表的批量删除一起放掉。
+                let waiters = self.handleMapWaiters
+                self.handleMapWaiters = []
+                for w in waiters { w() }
                 let pending = self.thumbPending
                 self.thumbPending = []
                 for p in pending { self.thumbnail(for: p.item, completion: p.completion) }
@@ -391,30 +481,43 @@ public final class MediaSyncService: ObservableObject {
     /// v1.0.17：取一张图库项目的缩略图数据（懒加载，格子露出来时才取）。
     /// 有句柄的直接取；ICC 项目没句柄就等映射表建好再按文件名翻译；
     /// 映射表还在建就先挂起，建好后统一放掉。结果走缓存，同一张不重复取。
+    /// v1.0.19：修了两个让格子永久占位图的 bug——(1) 挂起的请求在映射表
+    /// 建好后重跑时被 thumbInFlight 挡住（挂起前没摘掉），completion 永远
+    /// 不调，上面几行就一直是占位图，下面滚动后才出现的格子反而能显示；
+    /// (2) 同一张图第二个来取的直接被丢掉，现在排队等第一个的结果。
     public func thumbnail(for item: CameraMediaItem, completion: @escaping (Data?) -> Void) {
         if let cached = thumbCache[item.id] { completion(cached); return }
-        guard !thumbInFlight.contains(item.id) else { return }
+        if thumbInFlight.contains(item.id) {
+            thumbWaiters[item.id, default: []].append(completion)
+            return
+        }
         thumbInFlight.insert(item.id)
+        let finish: (Data?) -> Void = { [weak self] data in
+            guard let self = self else { return }
+            DispatchQueue.main.async {
+                self.thumbInFlight.remove(item.id)
+                if let data = data { self.thumbCache[item.id] = data }
+                completion(data)
+                let waiters = self.thumbWaiters.removeValue(forKey: item.id) ?? []
+                for w in waiters { w(data) }
+            }
+        }
         let fetch: (UInt32) -> Void = { [weak self] handle in
             guard let self = self else { return }
             self.thumbQueue.async {
-                UsbCameraManager.shared.fetchThumbnailData(handle: handle) { [weak self] data in
-                    guard let self = self else { return }
-                    DispatchQueue.main.async {
-                        self.thumbInFlight.remove(item.id)
-                        if let data = data { self.thumbCache[item.id] = data }
-                        completion(data)
-                    }
+                UsbCameraManager.shared.fetchThumbnailData(handle: handle) { data in
+                    finish(data)
                 }
             }
         }
         if let handle = item.ptpHandle { fetch(handle); return }
         if let handle = filenameHandleMap[item.filename] { fetch(handle); return }
         guard UsbCameraManager.shared.isUsbConnected else {
-            thumbInFlight.remove(item.id)
-            completion(nil)
+            finish(nil)
             return
         }
+        // 挂起前先把 inFlight 摘掉，不然映射表建好后重跑会被挡住。
+        thumbInFlight.remove(item.id)
         thumbPending.append((item: item, completion: completion))
         ensureFilenameHandleMap()
     }
@@ -475,7 +578,9 @@ public final class MediaSyncService: ObservableObject {
                 self.allRemoteHandles = ordered
                 self.fetchInfoSequentially(handles: ordered, index: 0, accumulated: []) { items in
                     DispatchQueue.main.async {
-                        self.fetchedItems = items
+                        // v1.0.19：钉住的刚拍照片合并回来。
+                        let merged = self.mergePinned(into: items)
+                        self.fetchedItems = merged
                         self.isSyncingIndex = false
                         self.stats.indexedTotalFiles = ordered.count
                         self.currentPage = 0

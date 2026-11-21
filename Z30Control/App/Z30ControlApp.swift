@@ -10,6 +10,8 @@ import SwiftUI
 @main
 public struct Z30ControlApp: App {
     @StateObject private var themeManager = ThemeManager.shared
+    // v1.0.19：方向锁（取景页强制横屏）要走 AppDelegate
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     
     public init() {}
     
