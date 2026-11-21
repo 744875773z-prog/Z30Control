@@ -841,7 +841,7 @@ public final class UsbCameraManager: NSObject, ObservableObject,
                 case 0x8013: cameraState.exposureMode = .user3
                 default:
                     cameraState.exposureMode = .unknown
-                    self?.setDiagnostic(String(format: "曝光模式未识别：原始值 0x%04X，请把这个值发给开发者对表", raw))
+                    self.setDiagnostic(String(format: "曝光模式未识别：原始值 0x%04X，请把这个值发给开发者对表", raw))
                 }
                 print("[PTP] 曝光模式: \(cameraState.exposureMode.rawValue) (原始=\(raw))")
 
