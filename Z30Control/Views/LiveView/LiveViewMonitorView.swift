@@ -32,6 +32,8 @@ public struct LiveViewMonitorView: View {
     @State private var previewSubtitle = "成片已回传至手机"
     @State private var isCapturing = false
     @State private var showingWiredHelp = false
+    // v1.0.15：未连接空状态里的“连接 Wi-Fi 热点”入口，直接在本页弹出连接向导。
+    @State private var showingConnectionWizard = false
     
     // 参数选择面板（v1.0.14：之前是系统 ActionSheet，iOS 27 上弹出后被底栏
     // 挡住大半、点不到值。现在改成页内自己的底部面板，永远在底栏上面。）
@@ -64,6 +66,9 @@ public struct LiveViewMonitorView: View {
                     landscapeTwoWingHUD(size: geometry.size)
                 } else {
                     portraitProHUD
+                        .sheet(isPresented: $showingConnectionWizard) {
+                            ConnectionWizardView()
+                        }
                 }
 
                 // 3b. v1.0.14：参数选择面板（页内底部面板，不走系统 ActionSheet，
@@ -276,7 +281,10 @@ public struct LiveViewMonitorView: View {
                     .scaledToFill()
             } else {
                 VStack(spacing: 0) {
-                    Spacer().frame(height: 200)
+                    // v1.0.15：完整模式下画面顶到 HUD 下面。之前这里留了 200pt，
+                    // 是按旧版顶栏位置估的；v1.0.15 顶栏上移后 HUD+参数约占 110pt，
+                    // 200 会在画面上面多留一条黑边。
+                    Spacer().frame(height: 110)
                     Image(uiImage: img)
                         .resizable()
                         .scaledToFit()
@@ -321,9 +329,11 @@ public struct LiveViewMonitorView: View {
                 endRadius: size.width * 0.8
             )
             
-            // 居中核心交互状态卡片 (消除死黑)
-            VStack(spacing: 14) {
-                if isDeviceConnected {
+            // v1.0.15：这里只放“已连接但还没出画面”的启动卡片。未连接的空状态
+            // 不再放这里——之前它居中在整块底图上，只有一张小卡片，上下各空
+            // 一大条黑边；现在挪到 portraitProHUD 中部，带两个连接入口。
+            if isDeviceConnected {
+                VStack(spacing: 14) {
                     if isAnyLiveViewStreaming {
                         ProgressView()
                             .progressViewStyle(CircularProgressViewStyle(tint: .white))
@@ -356,15 +366,6 @@ public struct LiveViewMonitorView: View {
                         .foregroundColor(.white.opacity(0.7))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 24)
-
-                    // v1.0.11：两条通路都没连上时，点启动按钮是没反应的，现在直接说出来
-                    if !isDeviceConnected {
-                        Text("相机未连接：请先插 USB 线，或在连接页连上 Wi-Fi")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(Color(red: 1.0, green: 0.55, blue: 0.45))
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 24)
-                    }
                     
                     // v1.0.4：取景失败原因直接显示，不再静悄悄黑屏
                     if !usbCamera.liveViewError.isEmpty {
@@ -381,41 +382,32 @@ public struct LiveViewMonitorView: View {
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 24)
                     }
-                } else {
-                    Image(systemName: "cable.connector.slash")
-                        .font(.system(size: 36))
-                        .foregroundColor(.white.opacity(0.4))
-                    
-                    Text("未检测到相机信号")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(.white.opacity(0.8))
-                    
-                    Text("请使用 USB-C 数据线直连，或在「连接」页连入相机 Wi-Fi 热点")
-                        .font(.system(size: 11))
-                        .foregroundColor(.white.opacity(0.5))
                 }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 18)
+                .background(Color.black.opacity(0.4))
+                .cornerRadius(16)
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 18)
-            .background(Color.black.opacity(0.4))
-            .cornerRadius(16)
             
-            // 监视器实时状态徽标
-            VStack(spacing: 8) {
-                Spacer()
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(isDeviceConnected ? NikonTheme.readyGreen : Color.orange)
-                        .frame(width: 7, height: 7)
-                    Text(isDeviceConnected ? "USB 联机待命中 · Z 30 硬件就绪" : "未检测到取景信号 · 请连接相机")
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.7))
+            // 监视器实时状态徽标（v1.0.15：只在已连接时显示。未连接时它写的是
+            // “未检测到取景信号”，和中部空状态重复，还会压到快门按钮上。）
+            if isDeviceConnected {
+                VStack(spacing: 8) {
+                    Spacer()
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(NikonTheme.readyGreen)
+                            .frame(width: 7, height: 7)
+                        Text("USB 联机待命中 · Z 30 硬件就绪")
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.7))
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.black.opacity(0.55))
+                    .cornerRadius(12)
+                    .padding(.bottom, 90)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Color.black.opacity(0.55))
-                .cornerRadius(12)
-                .padding(.bottom, 90)
             }
         }
     }
@@ -423,7 +415,11 @@ public struct LiveViewMonitorView: View {
     // MARK: - 竖屏专业监视器布局 (对齐网页版，可调三要素在上，不可调在下可折叠)
     private var portraitProHUD: some View {
         GeometryReader { geo in
-            let topPad = max(geo.safeAreaInsets.top, 8) // 灵动岛/状态栏安全区
+            // v1.0.15：这里不要再加 safeAreaInsets.top——根视图已经被系统按安全区
+            // 往下顶了一次（灵动岛约 59pt），而这里的 geo.safeAreaInsets.top 还是 59，
+            // 再加就是双份：实测顶栏被顶到 120pt 才出现，上面空一大条黑边（用户
+            // 2026-11-21 18:03 截图）。只留 8pt 固定间距就够了。
+            let topPad: CGFloat = 8
             VStack(spacing: 0) {
                 if !isCleanScreen {
                     // 顶部状态条与线连指引入口 (顶部 padding 自动适配灵动岛高度)
@@ -446,6 +442,17 @@ public struct LiveViewMonitorView: View {
                     }
                 }
                 
+                Spacer()
+
+                // v1.0.15：未连接时的空状态放在这里（参数条和底栏之间），上下两个
+                // Spacer 把剩余空间均分。之前它在底图中央只是一张小卡片，上下
+                // 各空一大条黑边；现在是标题 + 两个连接入口，点 USB 进线连指引，
+                // 点 Wi-Fi 直接弹出连接向导。
+                if !isCleanScreen && !isDeviceConnected {
+                    disconnectedEmptyState
+                        .padding(.horizontal, 20)
+                }
+
                 Spacer()
 
                 if !isCleanScreen {
@@ -748,6 +755,65 @@ public struct LiveViewMonitorView: View {
         return cameraState.exposureMode.shortLabel
     }
     
+    // MARK: - v1.0.15：未连接时的空状态（标题 + 两个连接入口）
+    private var disconnectedEmptyState: some View {
+        VStack(spacing: 18) {
+            VStack(spacing: 10) {
+                Image(systemName: "cable.connector.slash")
+                    .font(.system(size: 44))
+                    .foregroundColor(.white.opacity(0.4))
+                Text("未检测到相机信号")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(.white.opacity(0.85))
+                Text("请使用 USB-C 数据线直连，或在「连接」页连入相机 Wi-Fi 热点")
+                    .font(.system(size: 12))
+                    .foregroundColor(.white.opacity(0.5))
+                    .multilineTextAlignment(.center)
+            }
+            VStack(spacing: 10) {
+                connectOptionRow(icon: "cable.connector", title: "USB-C 直连", subtitle: "插线即连，最稳") {
+                    NikonTheme.triggerHaptic(style: .medium)
+                    showingWiredHelp = true
+                }
+                connectOptionRow(icon: "wifi", title: "连接相机 Wi-Fi 热点", subtitle: "相机开热点，手机加入后连接") {
+                    NikonTheme.triggerHaptic(style: .medium)
+                    showingConnectionWizard = true
+                }
+            }
+        }
+    }
+
+    private func connectOptionRow(icon: String, title: String, subtitle: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(NikonTheme.accentBlue)
+                    .frame(width: 36, height: 36)
+                    .background(NikonTheme.accentBlue.opacity(0.15))
+                    .cornerRadius(10)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.white)
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.5))
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.white.opacity(0.4))
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(Color.black.opacity(0.45))
+            .cornerRadius(14)
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.12), lineWidth: 0.8))
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+
     // MARK: - v1.0.14：本次拍摄缩略图条（点一张全屏回看）
     private var recentShotsStrip: some View {
         VStack(alignment: .leading, spacing: 6) {
