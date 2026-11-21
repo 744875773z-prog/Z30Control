@@ -419,7 +419,8 @@ public struct LiveViewMonitorView: View {
                     // 底部综合操作台 (清屏 DISP、AF-ON、大快门环、展开参数)
                     portraitBottomControlDeck
                         .padding(.horizontal, 16)
-                        .padding(.bottom, 88 + max(geo.safeAreaInsets.bottom - 20, 0)) // 预留底部 TabBar + 安全区
+                        // v1.0.9：底栏改成悬浮玻璃胶囊后比旧贴底白条高约 10pt，预留从 88 改到 96
+                        .padding(.bottom, 96 + max(geo.safeAreaInsets.bottom - 20, 0)) // 预留底部 TabBar + 安全区
                 }
             }
         }

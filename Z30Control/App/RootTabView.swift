@@ -82,49 +82,53 @@ public struct RootTabView: View {
                 (selectedTab == .liveView ? Color.black : Color.white)
                     .ignoresSafeArea()
             )
+            // v1.0.9：顶部双倍留白修复。根视图默认就被系统按安全区往下顶了一次
+            // （灵动岛约 59pt），上面又手动加了一个同等高度的白色占位块，两个叠加
+            // 导致“控制”标题离状态栏约 130pt。忽略顶部安全区，只留手动占位块。
+            .ignoresSafeArea(edges: .top)
         }
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .ignoresSafeArea(.container, edges: .bottom) // 底部直通物理边缘
     }
     
-    // MARK: - 纯白蓝调网页版 1:1 导航栏 (贴底无白块断层)
+    // MARK: - 悬浮玻璃底栏（v1.0.9：贴底白条 → 苹果风毛玻璃胶囊，往上抬一点）
+    // 旧版是全宽白条 + 底部 34pt 白块贴着屏幕底，看着笨重；新版是悬浮胶囊：
+    // ultraThinMaterial 毛玻璃底 + 白色细描边 + 柔和阴影，选中项是蓝色实心胶囊
+    // （白字），未选中灰字；底部留 bottomInset + 10pt，整体比原来抬高约 10pt。
+    // 注意：底栏仍在 VStack 流内（不是 overlay），页面内容不会被盖住。
     private func pureWhiteBlueTabBar(bottomInset: CGFloat) -> some View {
-        VStack(spacing: 0) {
-            // 顶部分隔线
-            Rectangle()
-                .fill(NikonTheme.borderDim)
-                .frame(height: 0.8)
-            
-            // 4 个 Tab 按钮行
-            HStack(spacing: 0) {
-                ForEach(MainTabItem.allCases, id: \.self) { tab in
-                    let isSelected = (selectedTab == tab)
-                    
-                    Button(action: {
-                        NikonTheme.triggerHaptic(style: .light)
-                        selectedTab = tab
-                    }) {
-                        VStack(spacing: 3) {
-                            Image(systemName: tab.iconName)
-                                .font(.system(size: 21, weight: isSelected ? .bold : .medium))
-                                .foregroundColor(isSelected ? NikonTheme.accentBlue : NikonTheme.textTertiary)
-                            
-                            Text(tab.title)
-                                .font(.system(size: 11, weight: isSelected ? .bold : .medium))
-                                .foregroundColor(isSelected ? NikonTheme.accentBlue : NikonTheme.textTertiary)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
+        HStack(spacing: 0) {
+            ForEach(MainTabItem.allCases, id: \.self) { tab in
+                let isSelected = (selectedTab == tab)
+
+                Button(action: {
+                    NikonTheme.triggerHaptic(style: .light)
+                    selectedTab = tab
+                }) {
+                    VStack(spacing: 3) {
+                        Image(systemName: tab.iconName)
+                            .font(.system(size: 20, weight: isSelected ? .bold : .medium))
+
+                        Text(tab.title)
+                            .font(.system(size: 11, weight: isSelected ? .bold : .medium))
                     }
-                    .buttonStyle(PlainButtonStyle())
+                    .foregroundColor(isSelected ? .white : NikonTheme.textTertiary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(
+                        isSelected ? NikonTheme.accentBlue : Color.clear,
+                        in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    )
                 }
+                .buttonStyle(PlainButtonStyle())
             }
-            .padding(.horizontal, 10)
-            
-            // 底部手势横条安全区 (贴底，不留多余空白)
-            Color.white
-                .frame(height: bottomInset)
         }
-        .background(Color.white)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().stroke(Color.white.opacity(0.55), lineWidth: 0.8))
+        .shadow(color: Color.black.opacity(0.14), radius: 12, x: 0, y: 4)
+        .padding(.horizontal, 16)
+        .padding(.bottom, bottomInset + 10)
     }
 }
