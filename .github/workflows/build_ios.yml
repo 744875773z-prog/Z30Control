@@ -43,7 +43,6 @@ jobs:
       - name: 使用 xcodebuild 编译 iOS Release App Bundle
         run: |
           echo "=== 开始编译 iOS 原生应用包 ==="
-          set -o pipefail
           xcodebuild build \
             -project Z30Control.xcodeproj \
             -scheme Z30Control \
@@ -54,7 +53,14 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             AD_HOC_CODE_SIGNING_ALLOWED=YES \
-            COMPILER_INDEX_STORE_ENABLE=NO 2>&1 | tee xcodebuild_raw.log || (echo "=== 编译失败错误日志摘要 ===" && grep -E "error:|fatal|failed" xcodebuild_raw.log -B 2 -A 5 | head -n 100 && exit 1)
+            COMPILER_INDEX_STORE_ENABLE=NO > xcodebuild_raw.log 2>&1 || (
+              echo "=== 编译失败，提取错误日志 ==="
+              grep -E "error:" xcodebuild_raw.log | head -n 30 | while read -r line; do
+                echo "::error title=XcodeBuildError::$line"
+              done
+              tail -n 80 xcodebuild_raw.log
+              exit 1
+            )
 
       - name: 组装与封装为标准 iOS .ipa 安装包
         run: |

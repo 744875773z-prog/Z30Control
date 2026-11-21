@@ -10,6 +10,9 @@ targets:
       - path: Z30Control
         excludes:
           - "Info.plist"
+          - "Resources/BuiltinLUTs"
+      - path: Z30Control/Resources/BuiltinLUTs
+        buildPhase: resources
     info:
       path: Z30Control/Info.plist
     scheme:
