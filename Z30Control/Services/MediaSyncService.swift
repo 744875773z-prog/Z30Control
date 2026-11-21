@@ -348,35 +348,31 @@ public final class MediaSyncService: ObservableObject {
         )
     }
     
-    // MARK: - 海量文件分页与流式懒加载 (Pagination)
+    // MARK: - v1.0.6：图库一次上全部（之前每页只上 30 张，又没有任何地方翻页，
+    // 图库永远只看到前 30 张。列表本身只是文件名/大小/日期，全部放内存没压力；
+    // 视图是 LazyVGrid/LazyVStack，只渲染看得见的行，不会卡）
     @Published public var hasMorePages: Bool = true
     @Published public var isLoadingMore: Bool = false
     private var allRemoteHandles: [UInt32] = []
     private var currentPage: Int = 0
-    private let pageSize: Int = 30
-    
-    /// 加载下一页 (每次加载 30 张，保持极端流畅，绝不卡顿)
+
+    /// 上全部剩余项（不再按 30 张分页）
     public func loadNextPage() {
         guard !isLoadingMore, hasMorePages else { return }
         isLoadingMore = true
-        
-        let startIndex = currentPage * pageSize
-        guard startIndex < fetchedItems.count else {
+
+        let remaining = Array(fetchedItems.dropFirst(mediaItems.count))
+        guard !remaining.isEmpty else {
             hasMorePages = false
             isLoadingMore = false
             return
         }
-        
-        let endIndex = min(startIndex + pageSize, fetchedItems.count)
-        let page = Array(fetchedItems[startIndex..<endIndex])
-        
+
         DispatchQueue.main.async {
-            self.mediaItems.append(contentsOf: page)
+            self.mediaItems.append(contentsOf: remaining)
             self.currentPage += 1
             self.isLoadingMore = false
-            if self.mediaItems.count >= self.fetchedItems.count {
-                self.hasMorePages = false
-            }
+            self.hasMorePages = false
         }
     }
 }

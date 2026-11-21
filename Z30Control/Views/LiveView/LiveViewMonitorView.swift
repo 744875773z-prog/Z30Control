@@ -450,16 +450,16 @@ public struct LiveViewMonitorView: View {
                         
                         // 曝光参数垂直卡片 (点击调参)
                         VStack(spacing: 6) {
-                            hudParamPill(title: "快门", value: cameraState.shutterSpeed, isActionable: true) {
+                            hudParamPill(title: "快门", value: cameraState.shutterSpeed, isActionable: isParamEditable("shutter")) {
                                 activeParamPicker = "shutter"
                             }
-                            hudParamPill(title: "光圈", value: cameraState.aperture, isActionable: true) {
+                            hudParamPill(title: "光圈", value: cameraState.aperture, isActionable: isParamEditable("aperture")) {
                                 activeParamPicker = "aperture"
                             }
-                            hudParamPill(title: "ISO", value: cameraState.isoActual, isActionable: true) {
+                            hudParamPill(title: "ISO", value: cameraState.isoActual, isActionable: isParamEditable("iso")) {
                                 activeParamPicker = "iso"
                             }
-                            hudParamPill(title: "EV", value: cameraState.exposureCompensation, isActionable: true) {
+                            hudParamPill(title: "EV", value: cameraState.exposureCompensation, isActionable: isParamEditable("ev")) {
                                 activeParamPicker = "ev"
                             }
                         }
@@ -624,13 +624,13 @@ public struct LiveViewMonitorView: View {
     // MARK: - 核心可调三要素 (快门、光圈、ISO) 药丸列
     private var coreThreeParamsHUD: some View {
         HStack(spacing: 8) {
-            hudParamPill(title: "快门", value: cameraState.shutterSpeed, isActionable: true) {
+            hudParamPill(title: "快门", value: cameraState.shutterSpeed, isActionable: isParamEditable("shutter")) {
                 activeParamPicker = "shutter"
             }
-            hudParamPill(title: "光圈", value: cameraState.aperture, isActionable: true) {
+            hudParamPill(title: "光圈", value: cameraState.aperture, isActionable: isParamEditable("aperture")) {
                 activeParamPicker = "aperture"
             }
-            hudParamPill(title: "ISO", value: cameraState.isoActual, isActionable: true) {
+            hudParamPill(title: "ISO", value: cameraState.isoActual, isActionable: isParamEditable("iso")) {
                 activeParamPicker = "iso"
             }
             
@@ -666,7 +666,7 @@ public struct LiveViewMonitorView: View {
                 activeParamPicker = "wb"
             }
             hudParamPill(title: "测光", value: cameraState.meteringMode.rawValue.prefix(2).description, isActionable: false)
-            hudParamPill(title: "± EV", value: cameraState.exposureCompensation, isActionable: true) {
+            hudParamPill(title: "± EV", value: cameraState.exposureCompensation, isActionable: isParamEditable("ev")) {
                 activeParamPicker = "ev"
             }
         }
@@ -829,6 +829,31 @@ public struct LiveViewMonitorView: View {
     }
     
     // MARK: - 通用 HUD 胶囊卡片
+    // MARK: - v1.0.6：按当前曝光模式决定参数能不能调
+    // M 挡快门/光圈/ISO 全可调（没有曝光补偿）；A 挡只能调光圈；S 挡只能调快门；
+    // P 挡快门光圈都由相机自动；ISO 在自动 ISO 时由相机定，手动 ISO 时可调。
+    // 可调的药丸显示蓝色、点得开；不可调的显示白色、点不开。
+    private func isParamEditable(_ param: String) -> Bool {
+        switch cameraState.exposureMode {
+        case .manual:
+            if param == "ev" { return false }
+            if param == "iso" { return !cameraState.isAutoISO }
+            return true
+        case .aperturePriority:
+            if param == "aperture" || param == "ev" { return true }
+            if param == "iso" { return !cameraState.isAutoISO }
+            return false
+        case .shutterPriority:
+            if param == "shutter" || param == "ev" { return true }
+            if param == "iso" { return !cameraState.isAutoISO }
+            return false
+        case .program:
+            if param == "ev" { return true }
+            if param == "iso" { return !cameraState.isAutoISO }
+            return false
+        }
+    }
+
     private func hudParamPill(title: String, value: String, isActionable: Bool, action: (() -> Void)? = nil) -> some View {
         Button(action: {
             if isActionable {
@@ -842,7 +867,7 @@ public struct LiveViewMonitorView: View {
                     .foregroundColor(Color.gray)
                 Text(value)
                     .font(.system(size: 13, weight: .black, design: .monospaced))
-                    .foregroundColor(isActionable ? NikonTheme.nikonYellow : .white)
+                    .foregroundColor(isActionable ? NikonTheme.accentBlue : .white)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 6)
@@ -850,7 +875,7 @@ public struct LiveViewMonitorView: View {
             .cornerRadius(10)
             .overlay(
                 RoundedRectangle(cornerRadius: 10)
-                    .stroke(isActionable ? NikonTheme.nikonYellow.opacity(0.5) : Color.white.opacity(0.15), lineWidth: 0.8)
+                    .stroke(isActionable ? NikonTheme.accentBlue.opacity(0.5) : Color.white.opacity(0.15), lineWidth: 0.8)
             )
         }
         .disabled(!isActionable)
@@ -1097,19 +1122,23 @@ public struct LiveViewMonitorView: View {
         }
     }
     
-    // MARK: - v1.0.4：曝光参数真实下发（之前选完只改本地显示，还谎称“已下发至机身”）
-    // 成功后才更新界面显示；失败保留旧值，原因写进 PTP 诊断。
-    private func setExposureProp(code: UInt16, value: Data, apply: @escaping () -> Void) {
+    // MARK: - v1.0.6：曝光参数真实下发 + 乐观更新
+    // v1.0.4 是等相机回包才改显示，但取景帧抢通道，回包要等好几秒，看着像“反应非常慢”。
+    // 现在先改显示再发命令，失败就恢复旧值，原因写进 PTP 诊断。
+    private func setExposureProp(code: UInt16, value: Data, apply: @escaping () -> Void, revert: @escaping () -> Void) {
+        apply()
         if usbCamera.isUsbConnected {
             usbCamera.setCameraProp(code: code, value: value) { ok in
-                DispatchQueue.main.async { if ok { apply() } }
+                DispatchQueue.main.async { if !ok { revert() } }
             }
         } else if connectionService.isConnected {
             connectionService.client.setDevicePropValue(code: code, value: value) { ok in
-                DispatchQueue.main.async { if ok { apply() } }
+                DispatchQueue.main.async { if !ok { revert() } }
             }
+        } else {
+            // 未连接：没下发就别假装改了，恢复旧值
+            revert()
         }
-        // 未连接时不改显示：没下发就别假装改了
     }
 
     /// “1/125”→80、“1s”→10000（ExposureTime 单位：秒×10000）
@@ -1149,9 +1178,12 @@ public struct LiveViewMonitorView: View {
                 buttons: speeds.map { s in
                     .default(Text(s)) {
                         guard let raw = encodeShutter(s) else { return }
-                        setExposureProp(code: 0x500D, value: Data(raw.littleEndianBytes)) {
+                        let old = cameraState.shutterSpeed
+                        setExposureProp(code: 0x500D, value: Data(raw.littleEndianBytes), apply: {
                             cameraState.shutterSpeed = s
-                        }
+                        }, revert: {
+                            cameraState.shutterSpeed = old
+                        })
                     }
                 } + [.cancel(Text("取消"))]
             )
@@ -1162,9 +1194,12 @@ public struct LiveViewMonitorView: View {
                 buttons: aps.map { a in
                     .default(Text(a)) {
                         guard let raw = encodeAperture(a) else { return }
-                        setExposureProp(code: 0x5007, value: Data(raw.littleEndianBytes)) {
+                        let old = cameraState.aperture
+                        setExposureProp(code: 0x5007, value: Data(raw.littleEndianBytes), apply: {
                             cameraState.aperture = a
-                        }
+                        }, revert: {
+                            cameraState.aperture = old
+                        })
                     }
                 } + [.cancel(Text("取消"))]
             )
@@ -1174,18 +1209,26 @@ public struct LiveViewMonitorView: View {
                 title: Text("调节感光度 (ISO)"),
                 buttons: isos.map { iso in
                     .default(Text(iso)) {
+                        let oldAuto = cameraState.isAutoISO
+                        let oldBase = cameraState.isoBase
+                        let oldActual = cameraState.isoActual
+                        let revertISO = {
+                            cameraState.isAutoISO = oldAuto
+                            cameraState.isoBase = oldBase
+                            cameraState.isoActual = oldActual
+                        }
                         if iso.contains("自动") {
                             // 0xFFFF = Auto ISO
-                            setExposureProp(code: 0x500F, value: Data(UInt16(0xFFFF).littleEndianBytes)) {
+                            setExposureProp(code: 0x500F, value: Data(UInt16(0xFFFF).littleEndianBytes), apply: {
                                 cameraState.isAutoISO = true
                                 cameraState.isoActual = "自动"
-                            }
+                            }, revert: revertISO)
                         } else if let v = UInt16(iso) {
-                            setExposureProp(code: 0x500F, value: Data(v.littleEndianBytes)) {
+                            setExposureProp(code: 0x500F, value: Data(v.littleEndianBytes), apply: {
                                 cameraState.isAutoISO = false
                                 cameraState.isoBase = iso
                                 cameraState.isoActual = iso
-                            }
+                            }, revert: revertISO)
                         }
                     }
                 } + [.cancel(Text("取消"))]
@@ -1197,9 +1240,12 @@ public struct LiveViewMonitorView: View {
                 buttons: evs.map { ev in
                     .default(Text(ev)) {
                         guard let raw = encodeEV(ev) else { return }
-                        setExposureProp(code: 0x5010, value: Data(raw.littleEndianBytes)) {
+                        let old = cameraState.exposureCompensation
+                        setExposureProp(code: 0x5010, value: Data(raw.littleEndianBytes), apply: {
                             cameraState.exposureCompensation = ev
-                        }
+                        }, revert: {
+                            cameraState.exposureCompensation = old
+                        })
                     }
                 } + [.cancel(Text("取消"))]
             )

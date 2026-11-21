@@ -29,12 +29,35 @@ public final class LiveViewStreamService: ObservableObject {
     
     private var frameCounter: Int = 0
     private var lastFpsTimestamp: TimeInterval = 0
+    // v1.0.6：滤镜在后台串行跑，只取最新一帧；忙时丢帧，保流畅
+    private let lutQueue = DispatchQueue(label: "com.z30control.lut", qos: .userInitiated)
+    private var lutFiltering = false
     
     private init() {
         generateMockHistogramData()
     }
     
     public func updateFrame(_ frame: LiveViewFrame) {
+        // v1.0.6：选了滤镜，取景画面要实时变。之前 activeFilter/isLUTEnabled 只改了状态，
+        // 没有任何地方把 LUT 画到帧上，所以选滤镜屏幕毫无变化。
+        if isLUTEnabled, let filter = activeFilter, let rawImage = frame.image {
+            guard !lutFiltering else { return } // 忙：丢掉这帧，下一帧再滤
+            lutFiltering = true
+            lutQueue.async { [weak self] in
+                let filtered = LUTProcessor.shared.applyLUT(to: rawImage, filter: filter)
+                let jpeg = filtered.jpegData(compressionQuality: 0.85) ?? frame.jpegData
+                let filteredFrame = LiveViewFrame(jpegData: jpeg, horizonRoll: frame.horizonRoll, horizonPitch: frame.horizonPitch, isInFocus: frame.isInFocus, focusRect: frame.focusRect, timestamp: frame.timestamp)
+                DispatchQueue.main.async {
+                    self?.lutFiltering = false
+                    self?.publishFrame(filteredFrame)
+                }
+            }
+            return
+        }
+        publishFrame(frame)
+    }
+
+    private func publishFrame(_ frame: LiveViewFrame) {
         self.currentFrame = frame
         
         // 计算真实 FPS
