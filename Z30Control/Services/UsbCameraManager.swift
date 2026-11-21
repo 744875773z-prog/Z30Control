@@ -327,7 +327,7 @@ public final class UsbCameraManager: NSObject, ObservableObject,
     /// 连接成功后，全量读取所有关键属性
     private func fetchAllCameraProperties() {
         guard let camera = activeCamera, isUsbConnected else { return }
-        guard camera.capabilities.contains(.acceptsPTPCommands) else {
+        guard camera.canAcceptPTPCommands else {
             print("[PTP] 该设备不支持 PTP 命令，跳过属性读取")
             return
         }
@@ -544,7 +544,7 @@ public final class UsbCameraManager: NSObject, ObservableObject,
             return
         }
         guard !isLiveViewStreaming else { return }
-        guard camera.capabilities.contains(.acceptsPTPCommands) else {
+        guard camera.canAcceptPTPCommands else {
             print("[UsbCameraManager] 相机不支持 PTP 命令，无法开启 LiveView")
             return
         }
@@ -643,19 +643,6 @@ public final class UsbCameraManager: NSObject, ObservableObject,
         }
         return nil
     }
-}
-
-// MARK: - ICCameraDevice 能力扩展检测
-private extension ICCameraDevice {
-    var capabilities: Set<ICCameraDeviceCapability> {
-        var caps = Set<ICCameraDeviceCapability>()
-        if canAcceptPTPCommands { caps.insert(.acceptsPTPCommands) }
-        return caps
-    }
-}
-
-private enum ICCameraDeviceCapability {
-    case acceptsPTPCommands
 }
 
 // MARK: - Double 格式化辅助
