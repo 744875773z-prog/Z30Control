@@ -19,6 +19,9 @@ public struct ControlDashboardView: View {
     @State private var isPulsing = false
     @State private var showingModelMenu = false
     @State private var showingWiredHelp = false
+    // v1.0.8：连接向导入口。向导页（选 USB/Wi-Fi/相机热点、扫局域网、手动输 IP）
+    // 之前在代码里存在，但全 App 没有任何按钮能打开它，用户根本找不到 Wi-Fi 选择。
+    @State private var showingConnectionWizard = false
     
     public init(cameraState: CameraState, onSwitchToLiveView: (() -> Void)? = nil) {
         self.cameraState = cameraState
@@ -58,6 +61,9 @@ public struct ControlDashboardView: View {
         }
         .sheet(isPresented: $showingWiredHelp) {
             wiredGuideSheet
+        }
+        .sheet(isPresented: $showingConnectionWizard) {
+            ConnectionWizardView()
         }
     }
     
@@ -99,6 +105,20 @@ public struct ControlDashboardView: View {
                 )
             }
             
+            // 连接方式按钮：打开连接新相机页（选 USB-C / Wi-Fi 局域网 / 相机热点）
+            Button(action: {
+                NikonTheme.triggerHaptic(style: .light)
+                showingConnectionWizard = true
+            }) {
+                Image(systemName: "wifi")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.white)
+                    .frame(width: 34, height: 34)
+                    .background(NikonTheme.accentBlue)
+                    .cornerRadius(8)
+                    .shadow(color: NikonTheme.accentBlue.opacity(0.3), radius: 4, x: 0, y: 2)
+            }
+
             // 右侧刷新小方块按钮
             Button(action: {
                 NikonTheme.triggerHaptic(style: .light)
