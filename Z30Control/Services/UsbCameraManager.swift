@@ -264,6 +264,11 @@ public final class UsbCameraManager: NSObject, ObservableObject,
     public func cameraDevice(_ camera: ICCameraDevice, didReceiveMetadata metadata: [AnyHashable: Any]?,
                               for item: ICCameraItem, error: (any Error)?) {}
 
+    // v1.0.18：协议要求必须实现。App 从不向 ICC 要缩略图（图库缩略图走
+    // PTP GetThumb），所以这里什么都不做。
+    public func cameraDevice(_ camera: ICCameraDevice, didReceiveThumbnail thumbnail: CGImage?,
+                              for item: ICCameraItem, error: (any Error)?) {}
+
     /// ⭐ 核心：接收相机硬件推送的 PTP 事件，事件驱动参数同步
     public func cameraDevice(_ camera: ICCameraDevice, didReceivePTPEvent eventData: Data) {
         parsePTPEvent(eventData: eventData, camera: camera)
