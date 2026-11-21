@@ -39,7 +39,7 @@ fragment half4 lutFragmentShader(
     constant float &intensity [[buffer(0)]]
 ) {
     half4 originalColor = sourceTexture.sample(textureSampler, in.texCoords);
-    half3 lutCoord = originalColor.rgb;
+    float3 lutCoord = float3(originalColor.rgb);
     half4 gradedColor = lutTexture.sample(lutSampler, lutCoord);
     half3 finalRGB = mix(originalColor.rgb, gradedColor.rgb, half(intensity));
     return half4(finalRGB, originalColor.a);
