@@ -360,7 +360,9 @@ public struct ControlDashboardView: View {
             .shadow(color: Color.black.opacity(0.03), radius: 10, x: 0, y: 3)
             
             // v1.0.4：PTP 诊断行——最近一次相机命令的结果，取景/参数出问题时这里会写原因
-            if !usbCamera.ptpDiagnostic.isEmpty {
+            // v1.0.17：只在真报错时显示。平时挂着“0x1015 → 数据在 first…”这种
+            // 成功日志，看着像坏了。
+            if usbCamera.ptpDiagnosticIsError {
                 Text("诊断：\(usbCamera.ptpDiagnostic)")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(NikonTheme.textTertiary)

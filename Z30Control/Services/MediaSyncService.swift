@@ -51,6 +51,20 @@ public final class MediaSyncService: ObservableObject {
     
     // 真实从相机拉取的完整列表（最新在前），分页从这里取
     private var fetchedItems: [CameraMediaItem] = []
+
+    // v1.0.17：图库缩略图与下载兜底用的文件名→PTP 句柄映射表。
+    // ICC 目录列出来的项目没有句柄，靠这张表把文件名翻译成句柄，
+    // 再用 PTP GetThumb 取缩略图、GetObject 取原图。
+    private var filenameHandleMap: [String: UInt32] = [:]
+    private var handleMapLoading = false
+
+    // 缩略图缓存（按项目 id，存 JPEG 数据）+ 在途去重 + 等映射表的挂起请求。
+    // PTP 同一时间只允许一个事务在途，并发取图会让相机回 DeviceBusy，
+    // 所以取图走串行队列，一次只取一张。
+    private var thumbCache: [UInt32: Data] = [:]
+    private var thumbInFlight: Set<UInt32> = []
+    private var thumbPending: [(item: CameraMediaItem, completion: (Data?) -> Void)] = []
+    private let thumbQueue = DispatchQueue(label: "com.z30control.thumbs.serial", qos: .utility)
     
     private var ptpClient: PtpIpClient { CameraConnectionService.shared.client }
     
@@ -154,46 +168,33 @@ public final class MediaSyncService: ObservableObject {
     }
     
     /// 图库详情页“保存原图”调用：真实从相机下载并存入相册/文稿
-    public func downloadAndSaveToPhotos(item: CameraMediaItem, completion: @escaping (Bool) -> Void) {
-        // v1.0.4：USB 来源走 ImageCaptureCore 下载（之前只认 PTP 句柄，USB 的 item 根本下不下来）
+    /// v1.0.17：取一张图库项目的原图数据（JPEG/NEF/视频都原样返回）。
+    /// USB：先走 ICC 下载；ICC 下不来（-9934）就按句柄走 PTP GetObject
+    /// （句柄优先用项目自带的，没有就查文件名→句柄映射表）。
+    /// Wi-Fi：直接 PTP GetObject。任何路都保证调一次 completion。
+    public func downloadOriginalData(item: CameraMediaItem, completion: @escaping (Data?) -> Void) {
         if let usbName = item.usbFilename {
             UsbCameraManager.shared.downloadUSBFile(named: usbName) { [weak self] data in
-                guard let self = self else { completion(false); return }
-                // v1.0.14：ICC 目录里没有这张（PTP 兜底列出来的），改按句柄走 PTP 取原图
-                if let data = data {
-                    self.saveDataToPhotosOrFiles(data, filename: item.filename) { ok in
-                        if ok {
-                            DispatchQueue.main.async {
-                                if let idx = self.mediaItems.firstIndex(where: { $0.id == item.id }) {
-                                    self.mediaItems[idx].isDownloaded = true
-                                }
-                                self.stats.completedCount += 1
-                            }
-                        }
-                        completion(ok)
-                    }
-                } else if let handle = item.ptpHandle {
-                    // 只有 PTP 兜底列出来的项目才有真句柄，拿它取原图；
-                    // ICC 目录的项目没有句柄，ICC 下不来就真的下不来。
-                    UsbCameraManager.shared.downloadRawObjectData(handle: handle, filename: item.filename) { [weak self] rawData in
-                        guard let self = self, let rawData = rawData else { completion(false); return }
-                        self.saveDataToPhotosOrFiles(rawData, filename: item.filename) { ok in
-                            if ok {
-                                DispatchQueue.main.async {
-                                    if let idx = self.mediaItems.firstIndex(where: { $0.id == item.id }) {
-                                        self.mediaItems[idx].isDownloaded = true
-                                    }
-                                    self.stats.completedCount += 1
-                                }
-                            }
-                            completion(ok)
-                        }
-                    }
+                guard let self = self else { completion(nil); return }
+                if let data = data { completion(data); return }
+                let handle = item.ptpHandle ?? self.filenameHandleMap[item.filename]
+                guard let handle = handle else { completion(nil); return }
+                UsbCameraManager.shared.downloadRawObjectData(handle: handle, filename: item.filename) { raw in
+                    completion(raw)
                 }
             }
             return
         }
-        ptpClient.getObject(handle: item.id) { [weak self] data in
+        ptpClient.getObject(handle: item.id) { data in
+            completion(data)
+        }
+    }
+
+    public func downloadAndSaveToPhotos(item: CameraMediaItem, completion: @escaping (Bool) -> Void) {
+        // v1.0.17：下载收敛到 downloadOriginalData。之前这里 ICC 失败且
+        // 项目没句柄时直接没了下文，completion 永远不调，详情页按钮
+        // “正在从相机下载…”转到天荒地老。现在任何结果都有答复。
+        downloadOriginalData(item: item) { [weak self] data in
             guard let self = self, let data = data else { completion(false); return }
             self.saveDataToPhotosOrFiles(data, filename: item.filename) { ok in
                 if ok {
@@ -253,6 +254,9 @@ public final class MediaSyncService: ObservableObject {
             refreshFromUSBViaPTP()
             return
         }
+        // v1.0.17：ICC 列出来的项目没有 PTP 句柄，缩略图和下载兜底都得靠
+        // 文件名→句柄映射表。后台建表，不堵列表显示。
+        ensureFilenameHandleMap()
         let items: [CameraMediaItem] = files.map { file in
             let name = file.name ?? "DSC_NEW.JPG"
             let ext = (name as NSString).pathExtension.lowercased()
@@ -309,6 +313,58 @@ public final class MediaSyncService: ObservableObject {
                 self.loadNextPage()
             }
         }
+    }
+
+    /// v1.0.17：后台建文件名→句柄映射表（卡里最新 1000 个对象）。
+    /// 一次建表，多处用：缩略图、图库下载兜底。建表时不堵界面；
+    /// 建好后把等映射表的缩略图请求一起放掉。
+    public func ensureFilenameHandleMap() {
+        guard UsbCameraManager.shared.isUsbConnected else { return }
+        guard !handleMapLoading else { return }
+        handleMapLoading = true
+        UsbCameraManager.shared.fetchCardItemsViaPTP(limit: 1000) { [weak self] entries in
+            guard let self = self else { return }
+            var map: [String: UInt32] = [:]
+            for e in entries { map[e.filename] = e.handle }
+            DispatchQueue.main.async {
+                self.filenameHandleMap = map
+                self.handleMapLoading = false
+                let pending = self.thumbPending
+                self.thumbPending = []
+                for p in pending { self.thumbnail(for: p.item, completion: p.completion) }
+            }
+        }
+    }
+
+    /// v1.0.17：取一张图库项目的缩略图数据（懒加载，格子露出来时才取）。
+    /// 有句柄的直接取；ICC 项目没句柄就等映射表建好再按文件名翻译；
+    /// 映射表还在建就先挂起，建好后统一放掉。结果走缓存，同一张不重复取。
+    public func thumbnail(for item: CameraMediaItem, completion: @escaping (Data?) -> Void) {
+        if let cached = thumbCache[item.id] { completion(cached); return }
+        guard !thumbInFlight.contains(item.id) else { return }
+        thumbInFlight.insert(item.id)
+        let fetch: (UInt32) -> Void = { [weak self] handle in
+            guard let self = self else { return }
+            self.thumbQueue.async {
+                UsbCameraManager.shared.fetchThumbnailData(handle: handle) { [weak self] data in
+                    guard let self = self else { return }
+                    DispatchQueue.main.async {
+                        self.thumbInFlight.remove(item.id)
+                        if let data = data { self.thumbCache[item.id] = data }
+                        completion(data)
+                    }
+                }
+            }
+        }
+        if let handle = item.ptpHandle { fetch(handle); return }
+        if let handle = filenameHandleMap[item.filename] { fetch(handle); return }
+        guard UsbCameraManager.shared.isUsbConnected else {
+            thumbInFlight.remove(item.id)
+            completion(nil)
+            return
+        }
+        thumbPending.append((item: item, completion: completion))
+        ensureFilenameHandleMap()
     }
 
     private static func format(for ext: String) -> MediaFormatType {

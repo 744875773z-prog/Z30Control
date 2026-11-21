@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 public struct CameraGalleryView: View {
     @ObservedObject var syncService = MediaSyncService.shared
@@ -167,14 +168,10 @@ public struct CameraGalleryView: View {
                     selectedItemForDetail = item
                 }) {
                     ZStack(alignment: .bottomLeading) {
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color(red: 0.94, green: 0.95, blue: 0.97))
-                            .aspectRatio(1, contentMode: .fit)
-                            .overlay(
-                                Image(systemName: item.format == .rawNEF ? "camera.metering.matrix" : "photo")
-                                    .font(.system(size: 24))
-                                    .foregroundColor(NikonTheme.accentBlue.opacity(0.5))
-                            )
+                        GalleryThumbImage(item: item)
+                            .aspectRatio(1, contentMode: .fill)
+                            .clipped()
+                            .cornerRadius(10)
                         
                         Text(item.format.rawValue)
                             .font(.system(size: 8, weight: .bold))
@@ -199,14 +196,10 @@ public struct CameraGalleryView: View {
                     selectedItemForDetail = item
                 }) {
                     HStack(spacing: 12) {
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color(red: 0.94, green: 0.95, blue: 0.97))
+                        GalleryThumbImage(item: item)
                             .frame(width: 54, height: 54)
-                            .overlay(
-                                Image(systemName: "photo")
-                                    .font(.system(size: 18))
-                                    .foregroundColor(NikonTheme.accentBlue)
-                            )
+                            .clipped()
+                            .cornerRadius(8)
                         
                         VStack(alignment: .leading, spacing: 3) {
                             Text(item.filename)
@@ -255,6 +248,10 @@ public struct PhotoExportSheet: View {
     @State private var isSavedAlert = false
     @State private var isSaving = false
     @State private var savedOK: Bool?
+    // v1.0.17：详情预览图 + 系统分享
+    @State private var previewImage: UIImage?
+    @State private var shareItem: ShareItem?
+    @State private var isSharing = false
     
     public init(item: CameraMediaItem) {
         self.item = item
@@ -263,15 +260,19 @@ public struct PhotoExportSheet: View {
     public var body: some View {
         NavigationView {
             VStack(spacing: 20) {
-                // 大图预览占位
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(red: 0.94, green: 0.95, blue: 0.97))
-                    .frame(height: 240)
-                    .overlay(
+                // v1.0.17：有缩略图就显示真图（点进来的格子一般已经取到了），
+                // 没取到就显示占位信息。文件名和时间是相机给的——相机时钟
+                // 快几分钟，显示的时间就比手机快几分钟（去相机设定菜单校准）。
+                Group {
+                    if let previewImage = previewImage {
                         VStack(spacing: 8) {
-                            Image(systemName: "photo.fill")
-                                .font(.system(size: 44))
-                                .foregroundColor(NikonTheme.accentBlue.opacity(0.6))
+                            Image(uiImage: previewImage)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(height: 240)
+                                .frame(maxWidth: .infinity)
+                                .background(Color(red: 0.94, green: 0.95, blue: 0.97))
+                                .cornerRadius(12)
                             Text(item.filename)
                                 .font(.system(size: 15, weight: .bold, design: .monospaced))
                                 .foregroundColor(NikonTheme.textPrimary)
@@ -279,9 +280,33 @@ public struct PhotoExportSheet: View {
                                 .font(.system(size: 11))
                                 .foregroundColor(NikonTheme.textTertiary)
                         }
-                    )
-                    .padding(.horizontal, 16)
-                    .padding(.top, 16)
+                    } else {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color(red: 0.94, green: 0.95, blue: 0.97))
+                            .frame(height: 240)
+                            .overlay(
+                                VStack(spacing: 8) {
+                                    Image(systemName: "photo.fill")
+                                        .font(.system(size: 44))
+                                        .foregroundColor(NikonTheme.accentBlue.opacity(0.6))
+                                    Text(item.filename)
+                                        .font(.system(size: 15, weight: .bold, design: .monospaced))
+                                        .foregroundColor(NikonTheme.textPrimary)
+                                    Text("\(item.formattedSize) · \(item.formattedTime)")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(NikonTheme.textTertiary)
+                                }
+                            )
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .onAppear {
+                    syncService.thumbnail(for: item) { data in
+                        guard let data = data, let image = UIImage(data: data) else { return }
+                        DispatchQueue.main.async { previewImage = image }
+                    }
+                }
                 
                 // 核心导出保存按钮
                 VStack(spacing: 12) {
@@ -315,10 +340,29 @@ public struct PhotoExportSheet: View {
                     
                     Button(action: {
                         NikonTheme.triggerHaptic(style: .light)
+                        guard !isSharing else { return }
+                        isSharing = true
+                        // v1.0.17：之前这个按钮只震一下，什么都不干。现在先把原图
+                        // 下到临时文件，再调系统分享（隔空投送/微信/保存到文件都在里面）。
+                        // 下不下来就不弹分享，不静默假装成功。
+                        syncService.downloadOriginalData(item: item) { data in
+                            DispatchQueue.main.async {
+                                isSharing = false
+                                guard let data = data else { return }
+                                let url = URL(fileURLWithPath: NSTemporaryDirectory())
+                                    .appendingPathComponent(item.filename)
+                                do {
+                                    try data.write(to: url)
+                                    shareItem = ShareItem(url: url)
+                                } catch {
+                                    // 写临时文件失败就不弹分享
+                                }
+                            }
+                        }
                     }) {
                         HStack(spacing: 6) {
                             Image(systemName: "square.and.arrow.up")
-                            Text("隔空投送 / 系统分享")
+                            Text(isSharing ? "正在准备分享文件…" : "隔空投送 / 系统分享")
                                 .font(.system(size: 14, weight: .bold))
                         }
                         .frame(maxWidth: .infinity)
@@ -328,6 +372,7 @@ public struct PhotoExportSheet: View {
                         .cornerRadius(12)
                         .overlay(RoundedRectangle(cornerRadius: 12).stroke(NikonTheme.borderDim, lineWidth: 1))
                     }
+                    .disabled(isSharing)
                 }
                 .padding(.horizontal, 16)
                 
@@ -350,6 +395,60 @@ public struct PhotoExportSheet: View {
                     dismissButton: .default(Text("好的"))
                 )
             }
+            .sheet(item: $shareItem) { item in
+                ActivityShareView(activityItems: [item.url])
+            }
         }
     }
+}
+
+/// v1.0.17：图库格子/列表/详情共用的缩略图。之前格子只画占位图标，
+/// 是因为根本没人取过缩略图；现在格子露出来时懒加载取一张，取到就显示。
+private struct GalleryThumbImage: View {
+    let item: CameraMediaItem
+    @ObservedObject var syncService = MediaSyncService.shared
+    @State private var thumb: UIImage?
+
+    var body: some View {
+        Group {
+            if let thumb = thumb {
+                Image(uiImage: thumb)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color(red: 0.94, green: 0.95, blue: 0.97))
+                    .overlay(
+                        Image(systemName: item.format == .rawNEF ? "camera.metering.matrix" : "photo")
+                            .font(.system(size: 24))
+                            .foregroundColor(NikonTheme.accentBlue.opacity(0.5))
+                    )
+            }
+        }
+        .onAppear {
+            guard thumb == nil else { return }
+            syncService.thumbnail(for: item) { data in
+                guard let data = data, let image = UIImage(data: data) else { return }
+                DispatchQueue.main.async { thumb = image }
+            }
+        }
+    }
+}
+
+/// v1.0.17：系统分享用的临时文件包装。
+private struct ShareItem: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
+/// v1.0.17：UIActivityViewController 的 SwiftUI 包装。之前分享按钮
+/// 只有震动没有分享，就是缺了这层。
+private struct ActivityShareView: UIViewControllerRepresentable {
+    let activityItems: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }

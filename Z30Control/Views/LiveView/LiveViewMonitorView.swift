@@ -379,7 +379,8 @@ public struct LiveViewMonitorView: View {
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 24)
                     }
-                    if !usbCamera.ptpDiagnostic.isEmpty {
+                    // v1.0.17：同控制页，诊断行只在真报错时显示。
+                    if usbCamera.ptpDiagnosticIsError {
                         Text(usbCamera.ptpDiagnostic)
                             .font(.system(size: 10, design: .monospaced))
                             .foregroundColor(.white.opacity(0.5))
@@ -1099,16 +1100,16 @@ public struct LiveViewMonitorView: View {
         NikonTheme.triggerHaptic(style: .heavy)
         guard isDeviceConnected else {
             afFailed = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.afFailed = false }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { self.afFailed = false }
             return
         }
         isAfOnActive = true
         afFailed = false
         let token = UUID()
         afRequestToken = token
-        let done: (Bool) -> Void = { [weak self] ok in
+        let done: (Bool) -> Void = { ok in
             DispatchQueue.main.async {
-                guard let self = self, self.afRequestToken == token else { return }
+                guard self.afRequestToken == token else { return }
                 self.isAfOnActive = false
                 if !ok { self.flashAfFailed() }
             }
@@ -1120,8 +1121,8 @@ public struct LiveViewMonitorView: View {
         } else {
             done(false)
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
-            guard let self = self, self.afRequestToken == token, self.isAfOnActive else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+            guard self.afRequestToken == token, self.isAfOnActive else { return }
             self.isAfOnActive = false
             self.flashAfFailed()
         }
@@ -1129,7 +1130,7 @@ public struct LiveViewMonitorView: View {
 
     private func flashAfFailed() {
         afFailed = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.afFailed = false }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { self.afFailed = false }
     }
 
     private func triggerShutterCapture() {
