@@ -26,6 +26,11 @@ public struct ConnectionWizardView: View {
                     // 3. 步骤连接指导卡片
                     connectionGuideSection
                     
+                    // 4. 局域网发现与手动 IP（仅路由器局域网模式）
+                    if connectionService.transportMode == .wifiLocal {
+                        lanDiscoverySection
+                    }
+                    
                     Spacer(minLength: 30)
                 }
                 .padding(.horizontal, 16)
@@ -175,6 +180,9 @@ public struct ConnectionWizardView: View {
                 if connectionService.transportMode == .usbC {
                     guideStepRow(step: "2", text: "使用 USB-C 数据线将 iPhone 与相机直接连接。")
                     guideStepRow(step: "3", text: "确认相机中的【USB 数据连接】设为“MTP/PTP”。")
+                } else if connectionService.transportMode == .wifiLocal {
+                    guideStepRow(step: "2", text: "相机 MENU ➔【网络】➔【连接到电脑】，选宿舍路由器（或手机热点），和手机连上同一个 Wi-Fi。")
+                    guideStepRow(step: "3", text: "点下方“重新扫描”找相机；扫不到就手动输入相机 IP（相机菜单里能看到）。")
                 } else {
                     guideStepRow(step: "2", text: "按相机 MENU 键 ➔【连接至智能设备】➔ 开启【Wi-Fi 连接】。")
                     guideStepRow(step: "3", text: "在手机 Wi-Fi 列表中加入以“Z30_”开头的热点网络。")
@@ -202,6 +210,84 @@ public struct ConnectionWizardView: View {
         }
     }
     
+    // MARK: - 局域网发现与手动 IP（仅路由器局域网模式）
+    private var lanDiscoverySection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("局域网相机")
+                .proHUDText(size: 13, weight: .bold)
+                .foregroundColor(.gray)
+
+            VStack(alignment: .leading, spacing: 10) {
+                if connectionService.isSearchingLAN {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                        Text("正在扫描局域网…")
+                            .font(.system(size: 12))
+                            .foregroundColor(.gray)
+                    }
+                } else if connectionService.discoveredCameras.isEmpty {
+                    Text("还没找到相机。确认相机已连上同一 Wi-Fi 后点“重新扫描”，或直接手动输入 IP。")
+                        .font(.system(size: 12))
+                        .foregroundColor(.gray)
+                } else {
+                    ForEach(connectionService.discoveredCameras, id: \.self) { ip in
+                        Button(action: {
+                            NikonTheme.triggerHaptic(style: .heavy)
+                            connectionService.targetIP = ip
+                            connectionService.startConnecting()
+                            presentationMode.wrappedValue.dismiss()
+                        }) {
+                            HStack {
+                                Image(systemName: "camera.fill")
+                                    .foregroundColor(NikonTheme.nikonYellow)
+                                Text(ip)
+                                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+                                    .foregroundColor(Color.primary)
+                                Spacer()
+                                Text("连接")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(NikonTheme.nikonYellow)
+                            }
+                            .padding(.vertical, 6)
+                        }
+                    }
+                }
+
+                Divider()
+
+                // 手动输入 IP
+                HStack(spacing: 8) {
+                    TextField("相机 IP，例如 192.168.1.100", text: $connectionService.manualIP)
+                        .keyboardType(.decimalPad)
+                        .font(.system(size: 13, design: .monospaced))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(Color(UIColor.systemGroupedBackground))
+                        .cornerRadius(8)
+                    Button("连接") {
+                        NikonTheme.triggerHaptic(style: .heavy)
+                        if connectionService.connectToManualIP(connectionService.manualIP) {
+                            presentationMode.wrappedValue.dismiss()
+                        }
+                    }
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.black)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(NikonTheme.nikonYellow)
+                    .cornerRadius(8)
+                }
+
+                Text(connectionService.statusMessage)
+                    .font(.system(size: 11))
+                    .foregroundColor(.gray)
+            }
+            .padding(14)
+            .background(Color(UIColor.secondarySystemGroupedBackground))
+            .cornerRadius(10)
+        }
+    }
+
     // MARK: - 底部操作栏 (对齐截图 2 大黄色胶囊按钮)
     private var bottomConnectBar: some View {
         VStack(spacing: 8) {
