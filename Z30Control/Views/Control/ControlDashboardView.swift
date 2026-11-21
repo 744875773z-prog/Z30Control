@@ -10,6 +10,11 @@ import SwiftUI
 public struct ControlDashboardView: View {
     @ObservedObject var cameraState: CameraState
     @ObservedObject var connectionService = CameraConnectionService.shared
+    @ObservedObject var usbCamera = UsbCameraManager.shared
+    
+    private var isDeviceConnected: Bool {
+        connectionService.isConnected || cameraState.isConnected || usbCamera.isUsbConnected
+    }
     
     @State private var isPulsing = false
     @State private var showingModelMenu = false
@@ -36,7 +41,7 @@ public struct ControlDashboardView: View {
                 startDetectButtonSection
                 
                 // 5. 连接成功后：展示用户要求的机身内存与电量卡片
-                if cameraState.isConnected {
+                if isDeviceConnected {
                     hardwareStorageAndBatteryCards
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
@@ -114,10 +119,10 @@ public struct ControlDashboardView: View {
     private var searchInfoStripSection: some View {
         HStack(spacing: 8) {
             Circle()
-                .fill(cameraState.isConnected ? NikonTheme.readyGreen : NikonTheme.accentBlue)
+                .fill(isDeviceConnected ? NikonTheme.readyGreen : NikonTheme.accentBlue)
                 .frame(width: 8, height: 8)
                 .scaleEffect(isPulsing ? 1.25 : 0.85)
-                .shadow(color: (cameraState.isConnected ? NikonTheme.readyGreen : NikonTheme.accentBlue).opacity(0.6), radius: 4)
+                .shadow(color: (isDeviceConnected ? NikonTheme.readyGreen : NikonTheme.accentBlue).opacity(0.6), radius: 4)
             
             Text(connectionService.statusMessage.isEmpty ? "正在通过 USB 与无线通道就绪..." : connectionService.statusMessage)
                 .font(.system(size: 13, weight: .medium))
@@ -132,7 +137,7 @@ public struct ControlDashboardView: View {
         .cornerRadius(8)
         .overlay(
             Rectangle()
-                .fill(cameraState.isConnected ? NikonTheme.readyGreen : NikonTheme.accentBlue)
+                .fill(isDeviceConnected ? NikonTheme.readyGreen : NikonTheme.accentBlue)
                 .frame(width: 3.5),
             alignment: .leading
         )
@@ -142,21 +147,21 @@ public struct ControlDashboardView: View {
     private var cameraDeviceCardSection: some View {
         Button(action: {
             NikonTheme.triggerHaptic(style: .light)
-            if !cameraState.isConnected {
+            if !isDeviceConnected {
                 connectionService.autoDetectAndConnect()
             }
         }) {
             HStack(spacing: 14) {
                 Image(systemName: "camera.fill")
                     .font(.system(size: 26))
-                    .foregroundColor(cameraState.isConnected ? NikonTheme.accentBlue : NikonTheme.textTertiary)
+                    .foregroundColor(isDeviceConnected ? NikonTheme.accentBlue : NikonTheme.textTertiary)
                 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(cameraState.isConnected ? "\(connectionService.selectedModel) (物理在线就绪)" : "\(connectionService.selectedModel) (待连接)")
+                    Text(isDeviceConnected ? "\(connectionService.selectedModel) (物理在线就绪)" : "\(connectionService.selectedModel) (待连接)")
                         .font(.system(size: 16, weight: .bold))
                         .foregroundColor(NikonTheme.textPrimary)
                     
-                    Text(cameraState.isConnected ? "USB-C · 物理连接握手成功" : "USB-C · 等待物理连接握手")
+                    Text(isDeviceConnected ? "USB-C · 物理连接握手成功" : "USB-C · 等待物理连接握手")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(NikonTheme.textSecondary)
                 }
@@ -166,10 +171,10 @@ public struct ControlDashboardView: View {
                 // 右侧圆圈徽标 (.cam-check-badge)
                 ZStack {
                     Circle()
-                        .stroke(cameraState.isConnected ? NikonTheme.accentBlue : NikonTheme.borderDim, lineWidth: 2)
+                        .stroke(isDeviceConnected ? NikonTheme.accentBlue : NikonTheme.borderDim, lineWidth: 2)
                         .frame(width: 24, height: 24)
                     
-                    if cameraState.isConnected {
+                    if isDeviceConnected {
                         Circle()
                             .fill(NikonTheme.accentBlue)
                             .frame(width: 24, height: 24)
@@ -181,11 +186,11 @@ public struct ControlDashboardView: View {
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 16)
-            .background(cameraState.isConnected ? Color(red: 0.97, green: 0.985, blue: 1.0) : NikonTheme.surfaceCard)
+            .background(isDeviceConnected ? Color(red: 0.97, green: 0.985, blue: 1.0) : NikonTheme.surfaceCard)
             .cornerRadius(16)
             .overlay(
                 RoundedRectangle(cornerRadius: 16)
-                    .stroke(cameraState.isConnected ? NikonTheme.accentBlue : NikonTheme.borderDim, lineWidth: 1.5)
+                    .stroke(isDeviceConnected ? NikonTheme.accentBlue : NikonTheme.borderDim, lineWidth: 1.5)
             )
             .shadow(color: Color.black.opacity(0.03), radius: 10, x: 0, y: 3)
         }
@@ -203,7 +208,7 @@ public struct ControlDashboardView: View {
                         ProgressView()
                             .progressViewStyle(CircularProgressViewStyle(tint: .white))
                     }
-                    Text(cameraState.isConnected ? "重新检测相机" : "开始检测连接")
+                    Text(isDeviceConnected ? "重新检测相机" : "开始检测连接")
                         .font(.system(size: 16, weight: .bold))
                         .foregroundColor(.white)
                 }

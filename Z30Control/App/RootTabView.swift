@@ -34,7 +34,8 @@ public enum MainTabItem: Int, CaseIterable {
 }
 
 public struct RootTabView: View {
-    @StateObject private var cameraState = CameraState()
+    @ObservedObject private var connectionService = CameraConnectionService.shared
+    private var cameraState: CameraState { connectionService.cameraState }
     @State private var selectedTab: MainTabItem = .control
     
     public init() {}

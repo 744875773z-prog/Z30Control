@@ -12,6 +12,11 @@ public struct LiveViewMonitorView: View {
     @ObservedObject var cameraState: CameraState
     @ObservedObject var streamService = LiveViewStreamService.shared
     @ObservedObject var connectionService = CameraConnectionService.shared
+    @ObservedObject var usbCamera = UsbCameraManager.shared
+    
+    private var isDeviceConnected: Bool {
+        connectionService.isConnected || cameraState.isConnected || usbCamera.isUsbConnected
+    }
     
     // 控制状态
     @State private var isShowingGrid = true
@@ -110,7 +115,7 @@ public struct LiveViewMonitorView: View {
                             Image(systemName: "video.fill")
                                 .font(.system(size: isLandscape ? 48 : 40))
                                 .foregroundColor(.white.opacity(0.18))
-                            Text(cameraState.isConnected ? "实时取景 60 FPS" : "实时模拟监看 (未接相机)")
+                            Text(isDeviceConnected ? "实时联机拍摄就绪 (USB-C 60 FPS)" : "实时模拟监看 (未接相机)")
                                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                                 .foregroundColor(.white.opacity(0.35))
                         }
@@ -357,9 +362,9 @@ public struct LiveViewMonitorView: View {
             // 连接状态标
             HStack(spacing: 5) {
                 Circle()
-                    .fill(cameraState.isConnected ? NikonTheme.readyGreen : Color.orange)
+                    .fill(isDeviceConnected ? NikonTheme.readyGreen : Color.orange)
                     .frame(width: 8, height: 8)
-                Text(cameraState.isConnected ? "已在线: \(cameraState.modelName)" : "未连相机")
+                Text(isDeviceConnected ? "已在线: \(usbCamera.connectedDeviceName.isEmpty ? cameraState.modelName : usbCamera.connectedDeviceName)" : "未连相机")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundColor(.white)
             }
@@ -378,13 +383,13 @@ public struct LiveViewMonitorView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "cable.connector")
                         .font(.system(size: 10, weight: .bold))
-                    Text(cameraState.isConnected ? "USB-C 有线" : "线连指引 (必看)")
+                    Text(isDeviceConnected ? "USB-C 有线" : "线连指引 (必看)")
                         .font(.system(size: 11, weight: .bold))
                 }
                 .foregroundColor(.black)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
-                .background(NikonTheme.nikonYellow)
+                .background(isDeviceConnected ? Color.white : NikonTheme.nikonYellow)
                 .cornerRadius(12)
             }
         }
@@ -628,6 +633,14 @@ public struct LiveViewMonitorView: View {
     // MARK: - 触发快门拍摄
     private func triggerShutterCapture() {
         NikonTheme.triggerHaptic(style: .heavy)
+        
+        // 1. 若 USB-C 硬件在线，直接请求机身释放快门
+        if let cam = usbCamera.activeCamera {
+            cam.requestTakePicture()
+        } else if connectionService.isConnected {
+            connectionService.client.sendExecuteCapture()
+        }
+        
         cameraState.remainingShots = max(0, cameraState.remainingShots - 1)
         let name = "DSC_\(Int.random(in: 3000...3999)).JPG"
         withAnimation(.easeInOut(duration: 0.15)) {
