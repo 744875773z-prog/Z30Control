@@ -866,11 +866,11 @@ public struct LiveViewMonitorView: View {
         NikonTheme.triggerHaptic(style: .heavy)
         isCapturing = true
         if usbCamera.isUsbConnected {
-            usbCamera.capturePhoto { [weak self] ok, err in
+            usbCamera.capturePhoto { ok, err in
                 DispatchQueue.main.async {
-                    self?.isCapturing = false
+                    self.isCapturing = false
                     if !ok {
-                        self?.showPreview(
+                        self.showPreview(
                             filename: nil,
                             title: "快门触发失败",
                             subtitle: err ?? "相机无响应"
@@ -880,17 +880,17 @@ public struct LiveViewMonitorView: View {
                 }
             }
         } else if connectionService.isConnected {
-            connectionService.client.initiateCapture { [weak self] ok in
+            connectionService.client.initiateCapture { ok in
                 DispatchQueue.main.async {
-                    self?.isCapturing = false
+                    self.isCapturing = false
                     if ok {
-                        self?.showPreview(
+                        self.showPreview(
                             filename: nil,
                             title: "快门已触发",
                             subtitle: "速传中，完成后见图库"
                         )
                     } else {
-                        self?.showPreview(
+                        self.showPreview(
                             filename: nil,
                             title: "快门触发失败",
                             subtitle: "Wi-Fi 未响应，请重试"
