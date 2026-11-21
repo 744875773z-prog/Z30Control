@@ -447,7 +447,7 @@ public final class UsbCameraManager: NSObject, ObservableObject,
             guard let self = self else { return }
             guard let handles = handles else {
                 print("[UsbCameraManager] 拍后复查：读句柄失败，只靠 didAdd")
-                setDiagnostic("拍后复查：读卡句柄失败，只靠相机推送")
+                self.setDiagnostic("拍后复查：读卡句柄失败，只靠相机推送")
                 DispatchQueue.main.async { self.resumeLiveViewFetching() }
                 return
             }
@@ -456,12 +456,12 @@ public final class UsbCameraManager: NSObject, ObservableObject,
                 print("[UsbCameraManager] 拍后复查：卡里没有新对象（didAdd 已处理或相机未写入）")
                 if attempt == 1 {
                     // 第一次没查到不等于没有——相机可能还没写完卡，3.5s 后再查一次
-                    setDiagnostic("拍后复查：2.5s 未见新照片，6s 后再查一次")
+                    self.setDiagnostic("拍后复查：2.5s 未见新照片，6s 后再查一次")
                     DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { [weak self] in
                         self?.checkForNewCapture(attempt: 2)
                     }
                 } else {
-                    setDiagnostic("拍后复查：卡里没有新对象（didAdd 已处理或相机未写入）")
+                    self.setDiagnostic("拍后复查：卡里没有新对象（didAdd 已处理或相机未写入）")
                     DispatchQueue.main.async { self.resumeLiveViewFetching() }
                 }
                 return
