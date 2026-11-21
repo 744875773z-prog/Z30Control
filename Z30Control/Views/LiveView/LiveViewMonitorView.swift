@@ -409,20 +409,25 @@ public struct LiveViewMonitorView: View {
     }
     
     // MARK: - 3D LUT 胶片模拟滤镜水平滚轴
+    private var allDisplayFilters: [LUTFilter] {
+        return LUTFilter.builtinPresets + LUTStorageManager.shared.customFilters
+    }
+    
     private var lutFilterSelectorStrip: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 // 原画 (无 LUT)
                 lutPill(name: "原片 (Off)", isSelected: !streamService.isLUTEnabled) {
                     streamService.isLUTEnabled = false
-                    streamService.activeFilter = nil
+                    streamService.setFilter(nil)
                 }
                 
                 // 各款胶片滤镜
-                ForEach(streamService.availableFilters) { filter in
+                ForEach(allDisplayFilters) { (filter: LUTFilter) in
                     let selected = streamService.isLUTEnabled && streamService.activeFilter?.id == filter.id
                     lutPill(name: filter.name, isSelected: selected) {
-                        streamService.applyLUT(filter: filter)
+                        streamService.isLUTEnabled = true
+                        streamService.setFilter(filter)
                     }
                 }
             }
