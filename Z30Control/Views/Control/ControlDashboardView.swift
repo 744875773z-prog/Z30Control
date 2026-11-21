@@ -10,6 +10,7 @@ import SwiftUI
 public struct ControlDashboardView: View {
     @ObservedObject var cameraState: CameraState
     @ObservedObject var connectionService = CameraConnectionService.shared
+    @ObservedObject var permissionManager = PermissionManager.shared
     
     @State private var isPulsing = false
     @State private var showingModelMenu = false
@@ -47,6 +48,7 @@ public struct ControlDashboardView: View {
         }
         .background(NikonTheme.bgPure.ignoresSafeArea())
         .onAppear {
+            permissionManager.requestAllRequiredPermissions()
             withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
                 isPulsing = true
             }
@@ -214,18 +216,34 @@ public struct ControlDashboardView: View {
                 .shadow(color: NikonTheme.accentBlue.opacity(0.35), radius: 12, x: 0, y: 5)
             }
             
-            // 插线排查提示链接
-            Button(action: {
-                showingWiredHelp = true
-            }) {
-                HStack(spacing: 4) {
-                    Image(systemName: "questionmark.circle")
-                    Text("插上 Type-C 线检测不到相机？查看机身设置")
+            // 插线排查与权限提示
+            HStack(spacing: 12) {
+                Button(action: {
+                    showingWiredHelp = true
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "questionmark.circle")
+                        Text("插线检测不到相机？机身设置")
+                    }
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(NikonTheme.accentBlue)
                 }
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(NikonTheme.accentBlue)
-                .padding(.top, 4)
+                
+                Text("·")
+                    .foregroundColor(NikonTheme.textTertiary)
+                
+                Button(action: {
+                    PermissionManager.openSystemSettings()
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "gearshape")
+                        Text("检查 iOS 权限")
+                    }
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(NikonTheme.textSecondary)
+                }
             }
+            .padding(.top, 4)
         }
     }
     
@@ -318,35 +336,85 @@ public struct ControlDashboardView: View {
         }
     }
     
-    // MARK: - USB-C 线连指引弹窗
+    // MARK: - USB-C 线连与权限指引弹窗
     private var wiredGuideSheet: some View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    Text("尼康相机有线连接指引")
+                    Text("尼康相机有线连接与权限排查")
                         .font(.system(size: 20, weight: .bold))
+                        .foregroundColor(NikonTheme.textPrimary)
                     
-                    Text("将 iPhone 15/16 与相机通过 USB-C 线直连时，必须在相机菜单设置一次，否则 iOS 无法识别第三方相机控制。")
-                        .font(.system(size: 14))
-                        .foregroundColor(.gray)
+                    Text("iPhone 15/16 Pro 系列通过 Type-C 直连相机，受到 iOS 18 安全与相机底层协议双重控制，请依序检查以下 4 点：")
+                        .font(.system(size: 13))
+                        .foregroundColor(NikonTheme.textSecondary)
                     
+                    // 1. 核心权限
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("第一步：进入相机菜单切换为【iPhone】")
-                            .font(.system(size: 15, weight: .bold))
-                        Text("打开 Z 30 电源 -> 按机身 MENU 键 -> 进入【设置菜单】(扳手) 或【网络菜单】-> 找到【USB 数据连接】-> 将默认的【MTP/PTP】更改为【iPhone】！")
-                            .font(.system(size: 13))
-                            .foregroundColor(.secondary)
-                            .padding(12)
-                            .background(Color.blue.opacity(0.08))
-                            .cornerRadius(10)
+                        HStack {
+                            Text("1. iOS 系统权限 (必须开启)")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundColor(NikonTheme.accentBlue)
+                            Spacer()
+                            Button("前往设置") {
+                                PermissionManager.openSystemSettings()
+                            }
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(NikonTheme.accentBlue)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(NikonTheme.accentBlueLight)
+                            .cornerRadius(8)
+                        }
+                        
+                        Text("进入 iPhone【设置】➔ 找到【Z30 影控】，确保【本地网络】与【无线数据 (无线局域网与蜂窝数据)】处于开启状态。若本地网络被关闭，iOS 会静默拦截相机通信。")
+                            .font(.system(size: 12))
+                            .foregroundColor(NikonTheme.textSecondary)
+                            .padding(10)
+                            .background(NikonTheme.bgSubtle)
+                            .cornerRadius(8)
                     }
                     
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("第二步：确认双头 Type-C 数据线")
+                    // 2. USB 供电关闭 (致命关键)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("2. 相机关闭【USB 供电】(关键防断连)")
                             .font(.system(size: 15, weight: .bold))
-                        Text("请确保连接线具备高速数据传输能力（如原装数据线或 Thunderbolt 4 线），非仅用于充电的线缆。")
-                            .font(.system(size: 13))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(NikonTheme.textPrimary)
+                        
+                        Text("按机身 MENU 键 ➔【设置菜单】(扳手图标) ➔ 找到【USB 供电】➔ 务必设为【关 (OFF)】！\n※ 若开启供电，相机将向手机索取高功率充电，触发 iPhone 16 过流保护而切断通信。")
+                            .font(.system(size: 12))
+                            .foregroundColor(NikonTheme.textSecondary)
+                            .padding(10)
+                            .background(Color.orange.opacity(0.08))
+                            .cornerRadius(8)
+                    }
+                    
+                    // 3. USB 模式设为 MTP/PTP 或 iPhone
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("3. 相机【USB 数据连接】模式")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundColor(NikonTheme.textPrimary)
+                        
+                        Text("按机身 MENU 键 ➔【设置菜单】或【网络菜单】➔ 找到【USB 数据连接】➔ 切换为【MTP/PTP】或【iPhone】。连通后相机屏幕上方会显示 [-PC-] 联机标识。")
+                            .font(.system(size: 12))
+                            .foregroundColor(NikonTheme.textSecondary)
+                            .padding(10)
+                            .background(NikonTheme.bgSubtle)
+                            .cornerRadius(8)
+                    }
+                    
+                    // 4. 数据线与配件允许
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("4. 双头 Type-C 数据线与允许配件")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundColor(NikonTheme.textPrimary)
+                        
+                        Text("① 插入线缆时若 iPhone 提示【要允许此配件连接吗？】，必须点击【允许】；\n② 务必使用支持数据传输的 USB-C 线（避免使用仅支持充电的快充线）。")
+                            .font(.system(size: 12))
+                            .foregroundColor(NikonTheme.textSecondary)
+                            .padding(10)
+                            .background(NikonTheme.bgSubtle)
+                            .cornerRadius(8)
                     }
                     
                     Button(action: {
@@ -357,7 +425,7 @@ public struct ControlDashboardView: View {
                             .font(.system(size: 15, weight: .bold))
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
-                            .frame(height: 48)
+                            .frame(height: 50)
                             .background(NikonTheme.accentBlue)
                             .cornerRadius(14)
                     }
