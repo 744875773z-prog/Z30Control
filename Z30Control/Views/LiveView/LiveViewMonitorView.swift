@@ -103,12 +103,44 @@ public struct LiveViewMonitorView: View {
             makeParamActionSheet(for: item.id)
         }
         .onAppear {
-            if usbCamera.isUsbConnected {
-                usbCamera.startLiveView()
-            }
+            // v1.0.3：之前这里只启动 USB 取景，Wi-Fi（PTP/IP）连上后从不发
+            // StartLiveView，所以画面永远是黑的。现在按当前通路启动。
+            startLiveViewForActiveTransport()
         }
         .onDisappear {
-            usbCamera.stopLiveView()
+            stopLiveViewForActiveTransport()
+        }
+        .onChange(of: connectionService.isConnected) { connected in
+            // 已在取景页时才连上相机（例如从连接页切回来）：立即开始取景
+            if connected && !usbCamera.isUsbConnected {
+                connectionService.client.startLiveView()
+            }
+        }
+    }
+    
+    // MARK: - v1.0.3：按当前通路启停取景（USB-C / Wi-Fi PTP/IP）
+    private var isAnyLiveViewStreaming: Bool {
+        usbCamera.isLiveViewStreaming || connectionService.client.isStreamingLiveView
+    }
+    
+    private func startLiveViewForActiveTransport() {
+        if usbCamera.isUsbConnected {
+            usbCamera.startLiveView()
+        } else if connectionService.isConnected {
+            connectionService.client.startLiveView()
+        }
+    }
+    
+    private func stopLiveViewForActiveTransport() {
+        usbCamera.stopLiveView()
+        connectionService.client.stopLiveView()
+    }
+    
+    private func toggleLiveViewForActiveTransport() {
+        if isAnyLiveViewStreaming {
+            stopLiveViewForActiveTransport()
+        } else {
+            startLiveViewForActiveTransport()
         }
     }
     
@@ -249,7 +281,7 @@ public struct LiveViewMonitorView: View {
             // 居中核心交互状态卡片 (消除死黑)
             VStack(spacing: 14) {
                 if isDeviceConnected {
-                    if usbCamera.isLiveViewStreaming {
+                    if isAnyLiveViewStreaming {
                         ProgressView()
                             .progressViewStyle(CircularProgressViewStyle(tint: .white))
                             .scaleEffect(1.2)
@@ -259,7 +291,7 @@ public struct LiveViewMonitorView: View {
                     } else {
                         Button(action: {
                             NikonTheme.triggerHaptic(style: .medium)
-                            usbCamera.startLiveView()
+                            startLiveViewForActiveTransport()
                         }) {
                             HStack(spacing: 8) {
                                 Image(systemName: "video.fill")
@@ -290,7 +322,7 @@ public struct LiveViewMonitorView: View {
                         .font(.system(size: 14, weight: .bold))
                         .foregroundColor(.white.opacity(0.8))
                     
-                    Text("请使用 USB-C 数据线将 iPhone 直连尼康 Z 30")
+                    Text("请使用 USB-C 数据线直连，或在「连接」页连入相机 Wi-Fi 热点")
                         .font(.system(size: 11))
                         .foregroundColor(.white.opacity(0.5))
                 }
@@ -523,22 +555,18 @@ public struct LiveViewMonitorView: View {
             if isDeviceConnected {
                 Button(action: {
                     NikonTheme.triggerHaptic(style: .medium)
-                    if usbCamera.isLiveViewStreaming {
-                        usbCamera.stopLiveView()
-                    } else {
-                        usbCamera.startLiveView()
-                    }
+                    toggleLiveViewForActiveTransport()
                 }) {
                     HStack(spacing: 4) {
-                        Image(systemName: usbCamera.isLiveViewStreaming ? "video.fill" : "video.slash")
+                        Image(systemName: isAnyLiveViewStreaming ? "video.fill" : "video.slash")
                             .font(.system(size: 10, weight: .bold))
-                        Text(usbCamera.isLiveViewStreaming ? "取景中" : "启动取景")
+                        Text(isAnyLiveViewStreaming ? "取景中" : "启动取景")
                             .font(.system(size: 11, weight: .bold))
                     }
-                    .foregroundColor(usbCamera.isLiveViewStreaming ? .black : .white)
+                    .foregroundColor(isAnyLiveViewStreaming ? .black : .white)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 5)
-                    .background(usbCamera.isLiveViewStreaming ? NikonTheme.readyGreen : NikonTheme.accentBlue)
+                    .background(isAnyLiveViewStreaming ? NikonTheme.readyGreen : NikonTheme.accentBlue)
                     .cornerRadius(12)
                 }
             }

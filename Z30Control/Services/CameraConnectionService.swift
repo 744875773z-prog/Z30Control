@@ -150,6 +150,10 @@ public final class CameraConnectionService: ObservableObject, PtpIpClientDelegat
                 self.cameraState.isConnected = true
                 self.cameraState.modelName = cameraName
                 NikonTheme.triggerHaptic(style: .heavy)
+                // v1.0.3：连上后立即拉取卡内文件索引，供图库页显示。
+                // 取景流不在这里启动——由取景页出现时启动（见 LiveViewMonitorView），
+                // 避免用户停在控制页时相机一直出取景流。
+                MediaSyncService.shared.refreshIndexFromCamera()
             case .reconnecting(let attempt):
                 self.isConnecting = true
                 self.statusMessage = "正在尝试重连 (\(attempt))..."

@@ -2,6 +2,20 @@
 
 一款专为**尼康 Z30（Nikon Z30）**设计的专业级 iOS 相机控制、3D LUT 胶片监看、无线相册与“按相机保护键自动速传”应用程序。
 
+## v1.0.3 修复说明（真机联调发现的问题）
+
+真机症状：Wi-Fi 连上显示“已连接”，但取景黑屏、图库为空。根因不在相机/网络，在 App 代码：
+
+1. **取景从未启动**：`PtpIpClient.startLiveView()` 写好了但全工程没人调；取景页只调了 USB 路径的 `usbCamera.startLiveView()`。现取景页按当前通路（USB / Wi-Fi）启动取景，连上后切到取景页也会自动开始。
+2. **数据阶段只读一个包**：`GetLiveViewImg`/`GetObject` 等操作的返回是 StartData → Data/EndData → CmdResponse 多包序列，之前只读一个包就当整帧，帧永远解析失败。现 `sendDataRequest` 完整读完数据阶段再交解析。
+3. **图库是假数据**：客户端根本没有 `GetObjectHandles`/`GetObject` 方法，`MediaSyncService` 凭空编造 1001…1060 号假句柄，下载等 0.6 秒谎报成功。现全部改为真实 PTP 调用，保存按钮也真实下载。
+4. **Ping 心跳污染指令流**：相机回的 Pong 会混进指令通道被当成命令响应。已删除 Ping，TCP keepalive 维持会话。
+5. **连接后发的 SetDevicePropValue(0xD1A2) 是畸形包**：规范要求只带属性码、值走数据阶段，之前把值当第 2 个参数发。已删除该调用；`setDevicePropValue` 改为规范的数据阶段发送。
+6. **指令通道串行执行器**：取景循环、图库拉取、速传下载现排队走同一事务，避免互相抢响应报文。
+7. **OpenSession/StartLiveView 现校验响应码**，被拒不再谎报“已连接”。
+
+> 提醒：`Tests/test_ptpip_protocol.py` 的 14 项测试是纯 Python socket 测试，对着本地模拟器跑的，从不执行 Swift 代码——它通过不等于 App 能连真机。本次修复的协议流程已用等价 Python 客户端对模拟器复核（见 `Tests/test_fixed_flow.py`），真机仍需实测。
+
 ---
 
 ## 一、 产品特色与工业美学

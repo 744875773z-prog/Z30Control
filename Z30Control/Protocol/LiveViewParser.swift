@@ -49,7 +49,9 @@ public final class LiveViewParser {
     /// - Parameter rawPayload: 相机返回的包含尼康私有头部与 JPEG 的原始数据
     /// - Returns: 解析成功的 LiveViewFrame，若校验失败返回 nil
     public static func parse(rawPayload: Data) -> LiveViewFrame? {
-        guard rawPayload.count > 128 else { return nil }
+        // 真机 LiveView 帧通常数十 KB；阈值放宽到 64 字节，避免小帧被误判
+        //（之前 >128 会把模拟器 116 字节的测试帧也丢掉）
+        guard rawPayload.count > 64 else { return nil }
         
         let bytes = [UInt8](rawPayload)
         
