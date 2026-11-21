@@ -86,6 +86,10 @@ public final class UsbCameraManager: NSObject, ObservableObject,
     // v1.0.4：取景看门狗（启动后 3 秒没帧就停掉并报错）；电量轮询定时器（30 秒）
     private var liveViewWatchdog: Timer?
     private var lastFrameAt: Date?
+    // v1.0.11：0x9201 启动命令 5 秒无应答的超时轮次号；单帧请求开始时间
+    // （ICC 回调丢了会让 isFetchingFrame 永远卡住，之后每帧都直接 return）
+    private var liveViewStartToken = UUID()
+    private var fetchStartedAt: Date?
     private var batteryTimer: Timer?
     private var lastFrameErrorAt: Date?
     // v1.0.4：图库“保存原图”用的下载回调（按文件名挂起）
@@ -908,11 +912,23 @@ public final class UsbCameraManager: NSObject, ObservableObject,
         guard !isLiveViewStreaming else { return }
         DispatchQueue.main.async { [weak self] in self?.liveViewError = "" }
 
+        // v1.0.11：0x9201 发出去后如果相机根本不回包，requestSendPTPCommand
+        // 的回调永远不触发，之前就静悄悄卡住，按钮点了像没反应。5 秒没应答
+        // 直接报错，让用户看到原因。
+        let token = UUID()
+        liveViewStartToken = token
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            guard let self = self else { return }
+            guard self.liveViewStartToken == token, !self.isLiveViewStreaming else { return }
+            self.liveViewError = "取景启动无应答：相机 5 秒没回 0x9201，请确认相机在拍照模式（不在回放/菜单），或重连/重启相机"
+        }
+
         print("[UsbCameraManager] 发送尼康 StartLiveView (0x9201)...")
         let startCmd = buildPTPCommandPacket(opCode: NikonPTPOpCode.nikonStartLiveView.rawValue)
 
         camera.requestSendPTPCommand(startCmd, outData: nil) { [weak self] (_, responseData, error) in
             guard let self = self else { return }
+            self.liveViewStartToken = UUID() // 回包了，上面那个 5 秒超时作废
             if let error = error {
                 print("[UsbCameraManager] StartLiveView 命令出错: \(error)")
                 DispatchQueue.main.async {
@@ -1020,12 +1036,24 @@ public final class UsbCameraManager: NSObject, ObservableObject,
     }
 
     private func fetchLiveViewFrame() {
+        // v1.0.11：上一帧请求如果 2 秒没回（ICC 回调丢了），isFetchingFrame
+        // 会永远卡住，之后每次都直接 return，画面冻住也不报错。在这里复位，
+        // 让下一拍重试，并写一行诊断。
+        if isFetchingFrame, let started = fetchStartedAt, Date().timeIntervalSince(started) > 2 {
+            isFetchingFrame = false
+            fetchStartedAt = nil
+            noteFrameError("取景帧请求超时未回，已重试")
+        }
         guard let camera = activeCamera, isLiveViewStreaming, !isFetchingFrame else { return }
         isFetchingFrame = true
+        fetchStartedAt = Date()
 
         let getCmd = buildPTPCommandPacket(opCode: NikonPTPOpCode.nikonGetLiveViewImg.rawValue)
         camera.requestSendPTPCommand(getCmd, outData: nil) { [weak self] (first, second, error) in
-            defer { self?.isFetchingFrame = false }
+            defer {
+                self?.isFetchingFrame = false
+                self?.fetchStartedAt = nil
+            }
             guard let self = self else { return }
             if let error = error {
                 self.noteFrameError("取景帧出错：\(error.localizedDescription)")

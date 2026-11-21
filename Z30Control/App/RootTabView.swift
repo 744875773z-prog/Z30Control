@@ -43,18 +43,15 @@ public struct RootTabView: View {
     public var body: some View {
         GeometryReader { geometry in
             let isLandscape = geometry.size.width > geometry.size.height
-            let topSafeArea = geometry.safeAreaInsets.top
             let bottomSafeArea = geometry.safeAreaInsets.bottom
-            
+
             VStack(spacing: 0) {
-                // MARK: - 顶部安全区占位 (灵动岛/刘海/状态栏，避免内容与系统状态栏重叠)
-                // 仅对非全屏黑背景的页面（控制页/速传/图库）显示，实时取景页自行处理
-                if selectedTab != .liveView {
-                    Color.white
-                        .frame(height: topSafeArea)
-                        .frame(maxWidth: .infinity)
-                }
-                
+                // v1.0.11：顶部留白只靠系统安全区，不再手动加占位块。
+                // 教训：根视图默认就被系统按安全区往下顶一次（灵动岛约 59pt），
+                // 之前又手动加了一个同等高度的白色占位块，两个叠加导致空隙约 130pt。
+                // v1.0.9 用 ignoresSafeArea(.top) 修了控制页，却把取景页自己的
+                // safeAreaInsets.top 归零，取景页顶栏直接顶到手机状态栏上重叠。
+                // 正确修法：删掉手动占位块和 ignoresSafeArea，只留系统安全区。
                 // MARK: - 主页面分发区
                 Group {
                     switch selectedTab {
@@ -82,10 +79,6 @@ public struct RootTabView: View {
                 (selectedTab == .liveView ? Color.black : Color.white)
                     .ignoresSafeArea()
             )
-            // v1.0.9：顶部双倍留白修复。根视图默认就被系统按安全区往下顶了一次
-            // （灵动岛约 59pt），上面又手动加了一个同等高度的白色占位块，两个叠加
-            // 导致“控制”标题离状态栏约 130pt。忽略顶部安全区，只留手动占位块。
-            .ignoresSafeArea(edges: .top)
         }
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .ignoresSafeArea(.container, edges: .bottom) // 底部直通物理边缘

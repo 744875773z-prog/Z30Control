@@ -120,6 +120,14 @@ public struct LiveViewMonitorView: View {
                 connectionService.client.startLiveView()
             }
         }
+        .onChange(of: usbCamera.isUsbConnected) { connected in
+            // v1.0.11：进取景页时 USB 还没握手完，onAppear 那次启动会扑空
+            // （当时两条通路都没连上），之后 USB 连上了也没人再启动。
+            // USB 握手完成后自动再启动一次，不用用户再点按钮。
+            if connected && !isAnyLiveViewStreaming {
+                startLiveViewForActiveTransport()
+            }
+        }
         .onChange(of: usbCamera.lastCapturedFilename) { name in
             // v1.0.4：机身快门或 App 快门拍完、照片真下载回来后，才回显真图+真文件名。
             // 之前快门按钮当场就随机编个 DSC_xxxx 弹“拍摄完成”，相机根本没拍。
@@ -327,6 +335,15 @@ public struct LiveViewMonitorView: View {
                         .foregroundColor(.white.opacity(0.7))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 24)
+
+                    // v1.0.11：两条通路都没连上时，点启动按钮是没反应的，现在直接说出来
+                    if !isDeviceConnected {
+                        Text("相机未连接：请先插 USB 线，或在连接页连上 Wi-Fi")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(Color(red: 1.0, green: 0.55, blue: 0.45))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 24)
+                    }
                     
                     // v1.0.4：取景失败原因直接显示，不再静悄悄黑屏
                     if !usbCamera.liveViewError.isEmpty {
