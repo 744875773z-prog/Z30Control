@@ -128,8 +128,8 @@ public struct RootTabView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
                     .background(
-                        isSelected ? NikonTheme.accentBlue : Color.clear,
-                        in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(isSelected ? NikonTheme.accentBlue : Color.clear)
                     )
                 }
                 .buttonStyle(PlainButtonStyle())

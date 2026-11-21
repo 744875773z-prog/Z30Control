@@ -13,12 +13,15 @@ Yuan 2026-11-21 23:46：iPad mini 5（iPadOS 14.2，巨魔商店装的）打不�
    14 上半透明白底。
 5. ConnectionWizardView 的 safeAreaInset（iOS 15+）→ 底部连接栏放进
    VStack 底部。
-6. 其他 iOS 15/16 API 全扫一遍：没有 NavigationStack、PhotosPicker、
+6. 其他 iOS 15/16/17 API 全扫一遍：没有 NavigationStack、PhotosPicker、
    ShareLink、presentationDetents、AsyncImage、refreshable、searchable、
    swipeActions、scrollContentBackground、.formatted(、AttributedString、
-   AnyLayout、ViewThatFits、GridRow、LabeledContent、Gauge。
+   AnyLayout、ViewThatFits、GridRow、LabeledContent、Gauge、.tint、
+   Button(role:、新式 alert、background(_:in:)、闭包式 overlay(alignment:)、
+   带位置的 onTapGesture。
    注意：LazyVGrid/GridItem 是 iOS 14 就有的，不算；UIGraphicsImageRenderer
-   是 UIKit（iOS 10+），不算。
+   是 UIKit（iOS 10+），不算；.onTapGesture(count: 2) 不带位置，是 iOS 13
+   就有的，不算。
 
 另外提醒过 Yuan：mini 5 是闪电口，有线直连得用苹果闪电转 USB 相机
 转换器（没实测过）；Wi-Fi 热点方式直接能用。
@@ -83,8 +86,16 @@ def run():
                    "presentationDetents", "AsyncImage", "refreshable",
                    "searchable", "swipeActions", "scrollContentBackground",
                    ".formatted(", "AttributedString", "AnyLayout",
-                   "ViewThatFits", "GridRow", "LabeledContent", "Gauge("]:
+                   "ViewThatFits", "GridRow", "LabeledContent", "Gauge(",
+                   ".tint(", "role: .cancel", "role: .destructive",
+                   "in: RoundedRectangle", "in: Capsule",
+                   ".overlay(alignment:", "coordinateSpace"]:
         check(f"没有 {banned}", banned not in swift_src)
+    check("没有新式 alert（标题+actions/message 闭包）",
+          '.alert("' not in swift_src)
+    check("没有带位置的 onTapGesture（iOS 17 才有）",
+          "coordinateSpace" not in swift_src
+          and "onTapGesture { location" not in swift_src)
     check("safeAreaInsets 只出现在 #available 兜底里",
           all("#available(iOS 15" in open(p, encoding="utf-8").read()
               for p in swift_files
@@ -100,6 +111,19 @@ def run():
           and "Capsule().fill(Color.white.opacity(0.88))" in root)
     check("向导页底部连接栏还在，改走 VStack",
           "bottomConnectBar" in wizard and "VStack(spacing: 0)" in wizard)
+
+    print("== 14 上能用的替代写法都在 ==")
+    check("点按对焦改走零距离拖拽手势",
+          "DragGesture(minimumDistance: 0)" in live)
+    check("进度条改走 .accentColor",
+          ".accentColor(NikonTheme.accentBlue)" in swift_src
+          and ".accentColor(NikonTheme.readyGreen)" in swift_src)
+    check("图库弹窗改走老式 Alert",
+          "Alert(" in swift_src)
+    check("底栏选中态改走 .fill",
+          ".fill(isSelected ? NikonTheme.accentBlue : Color.clear)" in root)
+    check("图库多选角标改走 Group 包 overlay",
+          "Group {" in swift_src and ", alignment: .topTrailing)" in swift_src)
 
     print("== 网格选择器还是页内面板（v1.0.25 的功能没丢）==")
     check("gridPickerPanel 在", "func gridPickerPanel" in live)

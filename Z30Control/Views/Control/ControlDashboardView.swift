@@ -305,7 +305,8 @@ public struct ControlDashboardView: View {
                 }
                 
                 ProgressView(value: cameraState.storageKnown ? cameraState.cardUsedGB : 0, total: cameraState.storageKnown ? cameraState.cardTotalGB : 1)
-                    .tint(NikonTheme.accentBlue)
+                    // v1.0.26：.tint 是 iOS 16 才有的；14 上用 .accentColor
+                    .accentColor(NikonTheme.accentBlue)
                     .scaleEffect(x: 1, y: 1.2, anchor: .center)
                 
                 Text(cameraState.storageKnown ? "约可拍摄 \(cameraState.remainingShots) 张 RAW+JPG 高清照片" : "正在读取存储卡…")
@@ -350,7 +351,8 @@ public struct ControlDashboardView: View {
                 }
                 
                 ProgressView(value: Double(cameraState.batteryKnown ? cameraState.batteryPercentage : 0), total: 100.0)
-                    .tint(NikonTheme.readyGreen)
+                    // v1.0.26：.tint 是 iOS 16 才有的；14 上用 .accentColor
+                    .accentColor(NikonTheme.readyGreen)
                     .scaleEffect(x: 1, y: 1.2, anchor: .center)
             }
             .padding(18)

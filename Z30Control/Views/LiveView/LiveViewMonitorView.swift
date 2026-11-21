@@ -218,30 +218,36 @@ public struct LiveViewMonitorView: View {
                 }
             }
             .contentShape(Rectangle())
-            .onTapGesture { location in
-                guard !isCleanScreen else {
-                    withAnimation { isCleanScreen = false }
-                    return
-                }
-                NikonTheme.triggerHaptic(style: .light)
-                self.touchFocusPosition = location
-                self.isFocusPulsing = true
-                
-                // v1.0.22：画面顺时针转了 90°，点按坐标也要跟着转：
-                // 屏上点 (nx, ny) 对应帧上 (ny, 1-nx)——帧左上角转到了屏右上角。
-                let normX = Float(location.x / geo.size.width)
-                let normY = Float(location.y / geo.size.height)
-                CameraConnectionService.shared.client.setTouchFocus(x: normY, y: 1 - normX)
-                
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    self.isFocusPulsing = false
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-                    if self.touchFocusPosition == location {
-                        withAnimation { self.touchFocusPosition = nil }
+            // v1.0.26：带位置的 onTapGesture 是 iOS 17 才有的；14 上用
+            // 零距离拖拽手势拿点按位置，效果一样（手指抬起时触发）。
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onEnded { value in
+                        let location = value.location
+                        guard !isCleanScreen else {
+                            withAnimation { isCleanScreen = false }
+                            return
+                        }
+                        NikonTheme.triggerHaptic(style: .light)
+                        self.touchFocusPosition = location
+                        self.isFocusPulsing = true
+
+                        // v1.0.22：画面顺时针转了 90°，点按坐标也要跟着转：
+                        // 屏上点 (nx, ny) 对应帧上 (ny, 1-nx)——帧左上角转到了屏右上角。
+                        let normX = Float(location.x / geo.size.width)
+                        let normY = Float(location.y / geo.size.height)
+                        CameraConnectionService.shared.client.setTouchFocus(x: normY, y: 1 - normX)
+
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                            self.isFocusPulsing = false
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                            if self.touchFocusPosition == location {
+                                withAnimation { self.touchFocusPosition = nil }
+                            }
+                        }
                     }
-                }
-            }
+            )
         }
     }
     

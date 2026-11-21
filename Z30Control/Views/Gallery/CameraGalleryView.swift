@@ -183,28 +183,37 @@ public struct CameraGalleryView: View {
         .sheet(item: $batchShare) { batch in
             ActivityShareView(activityItems: batch.urls)
         }
-        .alert("保存完成", isPresented: $showBatchResult) {
-            Button("好的", role: .cancel) { batchResult = nil }
-        } message: {
-            if let r = batchResult {
-                Text(r.0 == r.1 ? "已存入手机 \(r.0) 张。" : "已存入手机 \(r.0) 张，失败 \(r.1 - r.0) 张（相机连接可能断了，可以再选一次）。")
-            }
+        // v1.0.26：新式 alert（带 actions/message 闭包）是 iOS 15 才有的；
+        // 14 上用老式 Alert。
+        .alert(isPresented: $showBatchResult) {
+            Alert(
+                title: Text("保存完成"),
+                message: Text(batchResult.map { r in
+                    r.0 == r.1 ? "已存入手机 \(r.0) 张。" : "已存入手机 \(r.0) 张，失败 \(r.1 - r.0) 张（相机连接可能断了，可以再选一次）。"
+                } ?? ""),
+                dismissButton: .default(Text("好的")) { batchResult = nil }
+            )
         }
         // v1.0.19：批量删除确认 + 结果汇总（删了就真没了）
-        .alert("删除照片", isPresented: $showDeleteConfirm) {
-            Button("取消", role: .cancel) {}
-            Button("删除 \(selectedFilenames.count) 张", role: .destructive) {
-                deleteSelected()
-            }
-        } message: {
-            Text("将从相机存储卡中永久删除选中的 \(selectedFilenames.count) 张照片，无法恢复。")
+        // v1.0.26：新式 alert 是 iOS 15 才有的；14 上用老式 Alert。
+        .alert(isPresented: $showDeleteConfirm) {
+            Alert(
+                title: Text("删除照片"),
+                message: Text("将从相机存储卡中永久删除选中的 \(selectedFilenames.count) 张照片，无法恢复。"),
+                primaryButton: .destructive(Text("删除 \(selectedFilenames.count) 张")) {
+                    deleteSelected()
+                },
+                secondaryButton: .cancel(Text("取消"))
+            )
         }
-        .alert("删除完成", isPresented: $showBatchDeleteResult) {
-            Button("好的", role: .cancel) { batchDeleteResult = nil }
-        } message: {
-            if let r = batchDeleteResult {
-                Text(r.0 == r.1 ? "已删除 \(r.0) 张。" : "已删除 \(r.0) 张，失败 \(r.1 - r.0) 张（句柄映射表可能还没建好，或相机断了，可以再选一次）。")
-            }
+        .alert(isPresented: $showBatchDeleteResult) {
+            Alert(
+                title: Text("删除完成"),
+                message: Text(batchDeleteResult.map { r in
+                    r.0 == r.1 ? "已删除 \(r.0) 张。" : "已删除 \(r.0) 张，失败 \(r.1 - r.0) 张（句柄映射表可能还没建好，或相机断了，可以再选一次）。"
+                } ?? ""),
+                dismissButton: .default(Text("好的")) { batchDeleteResult = nil }
+            )
         }
     }
     
@@ -360,7 +369,9 @@ public struct CameraGalleryView: View {
                             .cornerRadius(4)
                             .padding(6)
                     }
-                    .overlay(alignment: .topTrailing) {
+                    // v1.0.26：闭包式 overlay(alignment:) 是 iOS 15 才有的；
+                    // 14 上把内容包进 Group 当普通视图传进去。
+                    .overlay(Group {
                         if isSelecting {
                             Image(systemName: selectedFilenames.contains(item.filename) ? "checkmark.circle.fill" : "circle")
                                 .font(.system(size: 22))
@@ -368,7 +379,7 @@ public struct CameraGalleryView: View {
                                 .shadow(color: .black.opacity(0.35), radius: 3)
                                 .padding(6)
                         }
-                    }
+                    }, alignment: .topTrailing)
                 }
             }
         }
