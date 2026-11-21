@@ -113,9 +113,14 @@ def run_test():
     # 10. GetObjectInfo (0x1008)
     trans_id += 1
     cmd_sock.sendall(struct.pack("<IIIHII", 22, 6, 1, 0x1008, trans_id, handles[0]))
-    cmd_sock.recv(20)
+    s_hdr = cmd_sock.recv(20)
+    # 注意：ObjectInfo 只有 41 字节，不能像原来那样 recv(64)——TCP 是字节流，
+    # 后面 14 字节的 CmdResp 已经在缓冲里，recv(64) 会把它一起吞掉，
+    # 接下来 recv(14) 就永远等不到数据（2026-11-22 定位：卡在第 10 步）。
+    # 按 StartData 里写的总长精确读。
+    info_len = struct.unpack("<IIIQ", s_hdr)[3]
     e_hdr = cmd_sock.recv(12)
-    info_payload = cmd_sock.recv(64)
+    info_payload = cmd_sock.recv(info_len)
     cmd_sock.recv(14)
     is_protected = struct.unpack("<H", info_payload[8:10])[0]
     print(f"✅ [测试 10] 获取照片元数据成功！(句柄 {handles[0]} 保护标志: {is_protected})")

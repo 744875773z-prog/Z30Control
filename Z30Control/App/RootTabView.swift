@@ -40,7 +40,7 @@ public struct RootTabView: View {
     
     public var body: some View {
         GeometryReader { geometry in
-            let bottomSafeArea = geometry.safeAreaInsets.bottom
+            let bottomSafeArea = bottomSafeInset(geometry)
 
             VStack(spacing: 0) {
                 // v1.0.11：顶部留白只靠系统安全区，不再手动加占位块。
@@ -80,6 +80,29 @@ public struct RootTabView: View {
         .ignoresSafeArea(.container, edges: .bottom) // 底部直通物理边缘
     }
     
+    // v1.0.26：iOS 14 没有 GeometryProxy.safeAreaInsets（iOS 15 才有）。
+    // 14 上从当前窗口拿；mini 5 有 Home 键，本来就是 0。
+    private func bottomSafeInset(_ geometry: GeometryProxy) -> CGFloat {
+        if #available(iOS 15, *) {
+            return geometry.safeAreaInsets.bottom
+        } else {
+            let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene
+            return windowScene?.windows.first?.safeAreaInsets.bottom ?? 0
+        }
+    }
+
+    // v1.0.26：ultraThinMaterial 是 iOS 15 才有的；14 上用半透明白底，
+    // 样子接近，mini 5 上能看。
+    private func tabBarCapsuleBackground() -> some View {
+        Group {
+            if #available(iOS 15, *) {
+                Capsule().fill(.ultraThinMaterial)
+            } else {
+                Capsule().fill(Color.white.opacity(0.88))
+            }
+        }
+    }
+
     // MARK: - 悬浮玻璃底栏（v1.0.9：贴底白条 → 苹果风毛玻璃胶囊，往上抬一点）
     // 旧版是全宽白条 + 底部 34pt 白块贴着屏幕底，看着笨重；新版是悬浮胶囊：
     // ultraThinMaterial 毛玻璃底 + 白色细描边 + 柔和阴影，选中项是蓝色实心胶囊
@@ -114,7 +137,7 @@ public struct RootTabView: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
-        .background(.ultraThinMaterial, in: Capsule())
+        .background(tabBarCapsuleBackground())
         .overlay(Capsule().stroke(Color.white.opacity(0.55), lineWidth: 0.8))
         .shadow(color: Color.black.opacity(0.14), radius: 12, x: 0, y: 4)
         .padding(.horizontal, 16)

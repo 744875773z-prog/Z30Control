@@ -67,7 +67,7 @@ def run():
           "disconnectedEmptyState" in live and "USB-C 直连" in live)
     check("快门还在", "triggerShutterCapture()" in live)
     check("DISP、网格、增强都在",
-          '"DISP"' in live and "isShowingGrid.toggle()" in live
+          '"DISP"' in live and "showingGridPicker = true" in live
           and "isEnhanceEnabled.toggle()" in live)
     check("三等分线不动", "compositionGridOverlay" in live)
 

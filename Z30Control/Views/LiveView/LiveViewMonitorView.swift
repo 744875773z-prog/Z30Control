@@ -19,7 +19,9 @@ public struct LiveViewMonitorView: View {
     }
     
     // 控制状态
-    @State private var isShowingGrid = true
+    // v1.0.25：网格 8 选 1（无网格 + 7 种），选择存在 UserDefaults。
+    @State private var gridStyle: GridStyle = GridStyle.load()
+    @State private var showingGridPicker = false
     @State private var isCleanScreen = false // DISP 清屏按键
     @State private var isFullScreen = false  // 全屏展开监看
     @State private var touchFocusPosition: CGPoint? = nil
@@ -73,6 +75,13 @@ public struct LiveViewMonitorView: View {
                 // 永远浮在底栏上面，不会被挡住）。点遮罩或 × 关闭，可连续点多个值。
                 if let picker = activeParamPicker, !isCleanScreen {
                     paramPickerPanel(for: picker)
+                }
+
+                // v1.0.26：取景网格选择面板——和参数面板同一个做法（页内底部
+                // 面板），不走系统 confirmationDialog，那是 iOS 15 才有的，
+                // mini 5 的 14.2 用不了。
+                if showingGridPicker && !isCleanScreen {
+                    gridPickerPanel()
                 }
 
                 // 4. 清屏状态下轻巧的恢复浮标 (严格对齐用户要求：位于右上角)
@@ -180,7 +189,7 @@ public struct LiveViewMonitorView: View {
                 .clipped()
                 
                 // 构图三等分线
-                if isShowingGrid && !isCleanScreen {
+                if gridStyle != .none && !isCleanScreen {
                     compositionGridOverlay
                 }
                 
@@ -411,12 +420,23 @@ public struct LiveViewMonitorView: View {
                         .padding(.horizontal, 16)
                         // 底栏在 VStack 流里，取景页框底就是 TabBar 顶边，
                         // 只留 12pt 间隙，快门键就贴在底栏上方。
-                        .padding(.bottom, 12 + max(geo.safeAreaInsets.bottom - 20, 0))
+                        .padding(.bottom, 12 + max(bottomSafeInset(geo) - 20, 0))
                 }
             }
         }
     }
     
+    // v1.0.26：iOS 14 没有 GeometryProxy.safeAreaInsets（iOS 15 才有）。
+    // 14 上从当前窗口拿；mini 5 有 Home 键，本来就是 0。
+    private func bottomSafeInset(_ geo: GeometryProxy) -> CGFloat {
+        if #available(iOS 15, *) {
+            return geo.safeAreaInsets.bottom
+        } else {
+            let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene
+            return windowScene?.windows.first?.safeAreaInsets.bottom ?? 0
+        }
+    }
+
     // MARK: - 横屏专业相机两翼透明 OSD 布局 (对齐网页版，画面零遮挡)
     private func landscapeTwoWingHUD(size: CGSize) -> some View {
         ZStack {
@@ -471,9 +491,9 @@ public struct LiveViewMonitorView: View {
                         HStack(spacing: 8) {
                             Button(action: {
                                 NikonTheme.triggerHaptic(style: .light)
-                                isShowingGrid.toggle()
+                                showingGridPicker = true
                             }) {
-                                Image(systemName: isShowingGrid ? "grid" : "grid.circle")
+                                Image(systemName: gridStyle == .none ? "grid.circle" : "grid")
                                     .font(.system(size: 15, weight: .bold))
                                     .foregroundColor(.white)
                                     .frame(width: 34, height: 34)
@@ -675,12 +695,12 @@ public struct LiveViewMonitorView: View {
                 // 辅助网格切换
                 Button(action: {
                     NikonTheme.triggerHaptic(style: .light)
-                    isShowingGrid.toggle()
+                    showingGridPicker = true
                 }) {
                     VStack(spacing: 3) {
-                        Image(systemName: isShowingGrid ? "grid" : "grid.circle")
+                        Image(systemName: gridStyle == .none ? "grid.circle" : "grid")
                             .font(.system(size: 16))
-                        Text(isShowingGrid ? "网格" : "关")
+                        Text(gridStyle == .none ? "关" : "网格")
                             .font(.system(size: 10, weight: .bold))
                     }
                     .foregroundColor(.white)
@@ -919,19 +939,9 @@ public struct LiveViewMonitorView: View {
     // MARK: - 辅助线
     private var compositionGridOverlay: some View {
         GeometryReader { geo in
-            Path { path in
-                let w = geo.size.width
-                let h = geo.size.height
-                path.move(to: CGPoint(x: w / 3, y: 0))
-                path.addLine(to: CGPoint(x: w / 3, y: h))
-                path.move(to: CGPoint(x: w * 2 / 3, y: 0))
-                path.addLine(to: CGPoint(x: w * 2 / 3, y: h))
-                path.move(to: CGPoint(x: 0, y: h / 3))
-                path.addLine(to: CGPoint(x: w, y: h / 3))
-                path.move(to: CGPoint(x: 0, y: h * 2 / 3))
-                path.addLine(to: CGPoint(x: w, y: h * 2 / 3))
-            }
-            .stroke(Color.white.opacity(0.25), lineWidth: 0.8)
+            // v1.0.25：按所选样式画线
+            GridStyle.path(for: gridStyle, in: geo.size)
+                .stroke(Color.white.opacity(0.25), lineWidth: 0.8)
         }
     }
     
@@ -1125,6 +1135,64 @@ public struct LiveViewMonitorView: View {
                         }
                     }
                     .padding(.horizontal, 2)
+                }
+            }
+            .padding(14)
+            .background(Color(red: 0.12, green: 0.12, blue: 0.14))
+            .cornerRadius(18)
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(0.15), lineWidth: 0.8))
+            .padding(.horizontal, 12)
+            // 底栏上面留出玻璃底栏的高度，别被挡住
+            .padding(.bottom, 110)
+        }
+        .ignoresSafeArea()
+    }
+
+    // MARK: - 取景网格选择面板（v1.0.26：页内底部面板，iOS 14 也能用）
+    private func gridPickerPanel() -> some View {
+        VStack(spacing: 0) {
+            // 遮罩：点空白处关闭
+            Color.black.opacity(0.35)
+                .onTapGesture {
+                    withAnimation(.easeInOut(duration: 0.15)) { showingGridPicker = false }
+                }
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("取景网格")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.white)
+                    Spacer()
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.15)) { showingGridPicker = false }
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 20))
+                            .foregroundColor(.white.opacity(0.7))
+                    }
+                }
+                // 8 个选项：无网格 + 7 种网格，点一个立即生效并关闭
+                ForEach(GridStyle.allCases, id: \.self) { style in
+                    Button(action: {
+                        NikonTheme.triggerHaptic(style: .light)
+                        gridStyle = style
+                        style.save()
+                        withAnimation(.easeInOut(duration: 0.15)) { showingGridPicker = false }
+                    }) {
+                        HStack {
+                            Text(style.displayName)
+                                .font(.system(size: 14, weight: .bold))
+                            Spacer()
+                            if style == gridStyle {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 14, weight: .bold))
+                            }
+                        }
+                        .foregroundColor(style == gridStyle ? .black : .white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(style == gridStyle ? NikonTheme.accentBlue : Color.white.opacity(0.12))
+                        .cornerRadius(12)
+                    }
                 }
             }
             .padding(14)

@@ -15,41 +15,43 @@ public struct ConnectionWizardView: View {
     
     public var body: some View {
         NavigationView {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    // 1. 相机机型选择板块
-                    cameraModelSection
+            // v1.0.26：safeAreaInset 是 iOS 15 才有的；14 上直接把底部连接
+            // 栏放进 VStack 底部，效果一样（栏不悬浮，内容区自己缩）。
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        // 1. 相机机型选择板块
+                        cameraModelSection
                     
-                    // 2. 连接通道单选板块 (USB-C / Wi-Fi / 相机热点)
-                    transportModeSection
+                        // 2. 连接通道单选板块 (USB-C / Wi-Fi / 相机热点)
+                        transportModeSection
                     
-                    // 3. 步骤连接指导卡片
-                    connectionGuideSection
+                        // 3. 步骤连接指导卡片
+                        connectionGuideSection
                     
-                    // 4. 局域网发现与手动 IP（仅路由器局域网模式）
-                    if connectionService.transportMode == .wifiLocal {
-                        lanDiscoverySection
+                        // 4. 局域网发现与手动 IP（仅路由器局域网模式）
+                        if connectionService.transportMode == .wifiLocal {
+                            lanDiscoverySection
+                        }
+                    
+                        Spacer(minLength: 30)
                     }
-                    
-                    Spacer(minLength: 30)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-            }
-            .background(Color(UIColor.systemGroupedBackground).ignoresSafeArea())
-            .navigationTitle("连接新相机")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: {
-                        presentationMode.wrappedValue.dismiss()
-                    }) {
-                        Image(systemName: "chevron.left")
-                            .foregroundColor(Color.primary)
+                .background(Color(UIColor.systemGroupedBackground).ignoresSafeArea())
+                .navigationTitle("连接新相机")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button(action: {
+                            presentationMode.wrappedValue.dismiss()
+                        }) {
+                            Image(systemName: "chevron.left")
+                                .foregroundColor(Color.primary)
+                        }
                     }
                 }
-            }
-            .safeAreaInset(edge: .bottom) {
                 bottomConnectBar
             }
         }

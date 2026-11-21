@@ -93,7 +93,7 @@ def run():
     check("进取景页锁竖屏（v1.0.22 起）", "OrientationLock.lockPortrait()" in live)
     check("离取景页恢复竖屏", "OrientationLock.unlockToPortrait()" in live)
     check("快门键贴底栏上方（96pt 空隙已清）",
-          ".padding(.bottom, 12 + max(geo.safeAreaInsets.bottom - 20, 0))" in live
+          ".padding(.bottom, 12 + max(bottomSafeInset(geo) - 20, 0))" in live
           and ".padding(.bottom, 96 +" not in live)
 
     print("== 批量删除机内照片 ==")

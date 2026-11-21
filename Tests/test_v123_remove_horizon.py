@@ -42,8 +42,8 @@ def run():
 
     print("== 源码：其他的不动 ==")
     check("三等分线还在", "compositionGridOverlay" in live)
-    check("三等分线还按开关显示",
-          "if isShowingGrid && !isCleanScreen" in live)
+    check("三等分线还按所选样式显示",
+          "if gridStyle != .none && !isCleanScreen" in live)
     check("点按对焦绿框还在", "touchFocusPosition" in live)
     check("取景画面还在（转 90°）", "rotationEffect(.degrees(90))" in live)
     check("取景页还是锁竖屏", "OrientationLock.lockPortrait()" in live)
