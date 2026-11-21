@@ -121,7 +121,7 @@ public struct ConnectionWizardView: View {
     
     private func modeOptionRow(mode: ConnectionTransportMode, title: String, icon: String, isSelected: Bool) -> some View {
         Button(action: {
-            NikonTheme.triggerHaptic(style: .selection)
+            NikonTheme.triggerHaptic(style: .light)
             connectionService.setTransportMode(mode)
         }) {
             HStack(spacing: 12) {

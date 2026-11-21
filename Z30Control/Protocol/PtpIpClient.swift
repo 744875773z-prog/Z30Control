@@ -246,7 +246,7 @@ public final class PtpIpClient {
         timer.setEventHandler { [weak self] in
             guard let self = self, self.isSessionOpen else { return }
             let ping = PtpIpPacket.makePing()
-            self.cmdConnection?.send(content: ping, completion: nil)
+            self.cmdConnection?.send(content: ping, completion: .idempotent)
         }
         timer.resume()
         self.heartbeatTimer = timer

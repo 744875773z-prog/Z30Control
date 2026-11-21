@@ -43,7 +43,7 @@ public struct ControlDashboardView: View {
                 message: Text("通过 PTP 协议直接下发给 Z30 机身硬件"),
                 buttons: PictureControlMode.allCases.map { mode in
                     .default(Text(mode.rawValue)) {
-                        NikonTheme.triggerHaptic(style: .selection)
+                        NikonTheme.triggerHaptic(style: .light)
                         cameraState.pictureControl = mode
                     }
                 } + [.cancel(Text("取消"))]

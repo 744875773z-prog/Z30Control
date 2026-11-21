@@ -33,7 +33,7 @@ public struct RootTabView: View {
                 
                 // 右上角模式切换药丸浮标 (在“实时取景”与“参数仪表盘”之间一键切换)
                 Button(action: {
-                    NikonTheme.triggerHaptic(style: .selection)
+                    NikonTheme.triggerHaptic(style: .light)
                     withAnimation(.easeInOut(duration: 0.2)) {
                         controlSubMode = (controlSubMode == 0) ? 1 : 0
                     }

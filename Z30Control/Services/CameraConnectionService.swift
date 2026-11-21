@@ -9,6 +9,14 @@ import Foundation
 import Combine
 import Network
 
+public enum ConnectionTransportMode: String, CaseIterable, Identifiable {
+    case usbC = "USB-C"
+    case wifiLocal = "Wi-Fi 或手机热点"
+    case cameraAP = "相机热点 (推荐模式)"
+    
+    public var id: String { rawValue }
+}
+
 public final class CameraConnectionService: ObservableObject, PtpIpClientDelegate {
     
     public static let shared = CameraConnectionService()

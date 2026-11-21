@@ -29,6 +29,7 @@ public final class MediaSyncService: ObservableObject {
     @Published public var isAutoTransferEnabled: Bool = true
     @Published public var currentTransferSpeedMBps: Double = 0.0
     @Published public var isDownloadingActive: Bool = false
+    @Published public var isSyncingIndex: Bool = false
     @Published public var currentTransferFileName: String = ""
     
     // 串行下载任务队列 (严格防并发打崩相机固件)

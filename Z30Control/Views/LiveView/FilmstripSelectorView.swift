@@ -48,10 +48,10 @@ public struct FilmstripSelectorView: View {
                 }
                 
                 // 经典胶片与用户导入的全部 LUT 列表
-                ForEach(allDisplayFilters) { filter in
+                ForEach(allDisplayFilters, id: \.id) { (filter: LUTFilter) in
                     let isSelected = streamService.activeFilter?.id == filter.id && streamService.isLUTEnabled
                     Button(action: {
-                        NikonTheme.triggerHaptic(style: .selection)
+                        NikonTheme.triggerHaptic(style: .light)
                         streamService.isLUTEnabled = true
                         streamService.setFilter(filter)
                     }) {
