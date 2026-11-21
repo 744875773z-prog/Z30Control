@@ -17,19 +17,19 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.1</string>
+    <string>1.0.2</string>
     <key>CFBundleVersion</key>
-    <string>2</string>
+    <string>3</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
     
-    <!-- 彻底解决 iPhone 16 Pro Max / 灵动岛全尺寸全屏无黑边关键配置 -->
-    <key>UILaunchScreen</key>
-    <dict/>
+    <!-- 彻底解决 iPhone 16 Pro Max / 灵动岛全尺寸全屏无黑边的金标准配置 -->
+    <key>UILaunchStoryboardName</key>
+    <string>LaunchScreen</string>
     
     <!-- 本地局域网权限 (必须声明，支持 USB-C 虚拟以太网网卡与 Wi-Fi 15740 端口) -->
     <key>NSLocalNetworkUsageDescription</key>
-    <string>Z30 影控需要访问本地网络，以通过 USB-C 有线数据线或 Wi-Fi 建立与尼康相机的高速 PTP 通信信道，用于低延迟实时取景、机身参数控制与原始照片极速传输。</string>
+    <string>Z30 影控需要访问本地网络，以通过 USB-C 有线数据线或 Wi-Fi 建立与尼康相机的高速通信信道，用于低延迟实时取景、机身参数控制与照片传输。</string>
     <key>NSBonjourServices</key>
     <array>
         <string>_ptp._tcp</string>
@@ -63,8 +63,8 @@
         <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
     
-    <!-- 界面外观支持系统暗色与浅色自适应 -->
+    <!-- 浅色工业级明亮外观 -->
     <key>UIUserInterfaceStyle</key>
-    <string>Automatic</string>
+    <string>Light</string>
 </dict>
 </plist>

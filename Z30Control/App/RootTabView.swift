@@ -2,22 +2,22 @@
 //  RootTabView.swift
 //  Z30Control
 //
-//  主页面 4 大核心 Tab 导航底座 (监看 / 仪表盘 / 速传 / 图库)
-//  默认启动进入专业实时取景电影监看台，完美适配 iPhone 16 Pro Max 全屏与横竖屏旋转
+//  4 大核心 Tab 导航底座 (控制 / 实时取景 / 速传 / 图库)
+//  100% 完整对齐网页版 4 大 Tab 架构与纯白蓝调视觉体系
 //
 
 import SwiftUI
 
 public enum MainTabItem: Int, CaseIterable {
-    case liveView = 0   // 实时取景监看 (对齐网页版默认首页)
-    case dashboard = 1  // 机身中控仪表盘
-    case fastTransfer = 2 // 相机保护键秒级速传
-    case gallery = 3    // 图库与 SD 卡素材管理
+    case control = 0      // 控制
+    case liveView = 1     // 实时取景
+    case fastTransfer = 2 // 速传
+    case gallery = 3      // 图库
     
     var title: String {
         switch self {
-        case .liveView: return "监看"
-        case .dashboard: return "中控"
+        case .control: return "控制"
+        case .liveView: return "实时取景"
         case .fastTransfer: return "速传"
         case .gallery: return "图库"
         }
@@ -25,8 +25,8 @@ public enum MainTabItem: Int, CaseIterable {
     
     var iconName: String {
         switch self {
-        case .liveView: return "video.fill"
-        case .dashboard: return "slider.horizontal.3"
+        case .control: return "camera.fill"
+        case .liveView: return "viewfinder"
         case .fastTransfer: return "dot.radiowaves.left.and.right"
         case .gallery: return "photo.stack.fill"
         }
@@ -35,7 +35,7 @@ public enum MainTabItem: Int, CaseIterable {
 
 public struct RootTabView: View {
     @StateObject private var cameraState = CameraState()
-    @State private var selectedTab: MainTabItem = .liveView // 默认直接进入实时取景监看！
+    @State private var selectedTab: MainTabItem = .control // 默认进入【控制】页 (对齐网页版图 2)
     
     public init() {}
     
@@ -44,17 +44,13 @@ public struct RootTabView: View {
             let isLandscape = geometry.size.width > geometry.size.height
             
             ZStack(alignment: .bottom) {
-                // MARK: - 主页面内容分发 (沉浸式全屏)
+                // MARK: - 主页面分发
                 Group {
                     switch selectedTab {
+                    case .control:
+                        ControlDashboardView(cameraState: cameraState)
                     case .liveView:
                         LiveViewMonitorView(cameraState: cameraState)
-                    case .dashboard:
-                        ControlDashboardView(cameraState: cameraState, onSwitchToLiveView: {
-                            withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
-                                selectedTab = .liveView
-                            }
-                        })
                     case .fastTransfer:
                         FastTransferView()
                     case .gallery:
@@ -62,70 +58,53 @@ public struct RootTabView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .ignoresSafeArea() // 彻底消除 Letterbox 黑边，铺满 iPhone 16 Pro Max
+                .ignoresSafeArea() // 确保在 LaunchScreen 加持下，满幅适配 iPhone 16 Pro Max 全屏
                 
-                // MARK: - 底部悬浮高亮胶囊 TabBar
-                // 横屏下自动隐藏底部 TabBar，将整块屏幕完整让给监视器画面！竖屏下保留
+                // MARK: - 底部 TabBar (横屏下自动隐藏，竖屏下纯白蓝调对齐网页版)
                 if !isLandscape {
-                    customFloatingTabBar
-                        .padding(.bottom, max(geometry.safeAreaInsets.bottom, 12))
-                        .padding(.horizontal, 20)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    pureWhiteBlueTabBar
+                        .padding(.bottom, max(geometry.safeAreaInsets.bottom, 6))
                 }
             }
             .ignoresSafeArea(.keyboard, edges: .bottom)
         }
     }
     
-    // MARK: - 自定义高对比悬浮胶囊 TabBar
-    private var customFloatingTabBar: some View {
+    // MARK: - 纯白蓝调网页版 1:1 导航栏
+    private var pureWhiteBlueTabBar: some View {
         HStack(spacing: 0) {
             ForEach(MainTabItem.allCases, id: \.self) { tab in
                 let isSelected = (selectedTab == tab)
                 
                 Button(action: {
                     NikonTheme.triggerHaptic(style: .light)
-                    withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
-                        selectedTab = tab
-                    }
+                    selectedTab = tab
                 }) {
-                    HStack(spacing: 5) {
+                    VStack(spacing: 4) {
                         Image(systemName: tab.iconName)
-                            .font(.system(size: isSelected ? 15 : 14, weight: isSelected ? .bold : .medium))
-                            .foregroundColor(isSelected ? .black : Color.white.opacity(0.7))
+                            .font(.system(size: 20, weight: isSelected ? .bold : .medium))
+                            .foregroundColor(isSelected ? NikonTheme.accentBlue : NikonTheme.textTertiary)
                         
-                        if isSelected {
-                            Text(tab.title)
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(.black)
-                        }
+                        Text(tab.title)
+                            .font(.system(size: 11, weight: isSelected ? .bold : .medium))
+                            .foregroundColor(isSelected ? NikonTheme.accentBlue : NikonTheme.textTertiary)
                     }
-                    .frame(height: 36)
                     .frame(maxWidth: .infinity)
-                    .background(
-                        Group {
-                            if isSelected {
-                                RoundedRectangle(cornerRadius: 18)
-                                    .fill(NikonTheme.nikonYellow) // 醒目高对比的经典尼康亮黄！
-                                    .shadow(color: NikonTheme.nikonYellow.opacity(0.4), radius: 6, x: 0, y: 1)
-                            } else {
-                                Color.clear
-                            }
-                        }
-                    )
+                    .frame(height: 52)
                 }
                 .buttonStyle(PlainButtonStyle())
             }
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 5)
+        .padding(.horizontal, 10)
+        .padding(.top, 6)
         .background(
-            RoundedRectangle(cornerRadius: 24)
-                .fill(Color(red: 0.12, green: 0.12, blue: 0.14).opacity(0.92)) // 深色毛玻璃高对比底座
-                .shadow(color: Color.black.opacity(0.5), radius: 14, x: 0, y: 4)
+            Color.white
+                .shadow(color: Color.black.opacity(0.04), radius: 10, x: 0, y: -4)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 24)
-                        .stroke(Color.white.opacity(0.15), lineWidth: 0.8)
+                    Rectangle()
+                        .fill(NikonTheme.borderDim)
+                        .frame(height: 0.8),
+                    alignment: .top
                 )
         )
     }

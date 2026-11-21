@@ -15,6 +15,8 @@ targets:
         buildPhase: resources
     info:
       path: Z30Control/Info.plist
+      properties:
+        UILaunchStoryboardName: LaunchScreen
     scheme:
       build:
         targets:
@@ -28,7 +30,7 @@ targets:
       CODE_SIGN_IDENTITY: ""
       DEVELOPMENT_TEAM: ""
       CURRENT_PROJECT_VERSION: 1
-      MARKETING_VERSION: 1.0.0
+      MARKETING_VERSION: 1.0.2
       SWIFT_VERSION: "5.9"
       ENABLE_BITCODE: NO
       GENERATE_INFOPLIST_FILE: NO
