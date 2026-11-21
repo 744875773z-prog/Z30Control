@@ -18,12 +18,8 @@ let package = Package(
     targets: [
         .target(
             name: "Z30Control",
-            path: "Z30Control"
-        ),
-        .testTarget(
-            name: "Z30ControlTests",
-            dependencies: ["Z30Control"],
-            path: "Tests"
+            path: "Z30Control",
+            exclude: ["Info.plist"]
         ),
     ]
 )

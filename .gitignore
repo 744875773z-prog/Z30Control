@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# Simulator photos and temp
+Simulator/photos/*
+!Simulator/photos/.gitkeep
+Simulator/__pycache__/
+
+# macOS / Xcode
+.DS_Store
+*.xcworkspace
+xcuserdata/
+DerivedData/
+build/
+Payload/
+*.ipa
+
+# Temp test files
+test*.py
+check*.py
+recover*.py

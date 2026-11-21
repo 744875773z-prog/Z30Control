@@ -1,6 +1,6 @@
 name: Z30Control
 options:
-  bundleIdPrefix: com.nikon
+  bundleIdPrefix: com.nikonpro
 targets:
   Z30Control:
     type: application
@@ -8,14 +8,18 @@ targets:
     deploymentTarget: "16.0"
     sources:
       - path: Z30Control
+        excludes:
+          - "Info.plist"
     info:
       path: Z30Control/Info.plist
     settings:
-      PRODUCT_BUNDLE_IDENTIFIER: com.nikon.z30control
+      PRODUCT_BUNDLE_IDENTIFIER: com.nikonpro.z30control
       INFOPLIST_FILE: Z30Control/Info.plist
+      CODE_SIGN_STYLE: Manual
       CODE_SIGNING_ALLOWED: NO
       CODE_SIGNING_REQUIRED: NO
       CODE_SIGN_IDENTITY: ""
+      DEVELOPMENT_TEAM: ""
       CURRENT_PROJECT_VERSION: 1
       MARKETING_VERSION: 1.0.0
       SWIFT_VERSION: "5.9"

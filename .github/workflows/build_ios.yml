@@ -16,11 +16,22 @@ jobs:
       - name: 检出项目源代码
         uses: actions/checkout@v4
 
+      - name: 检查 macOS 与 Xcode 开发环境
+        run: |
+          echo "=== 系统信息 ==="
+          sw_vers
+          xcodebuild -version
+          swift --version
+          xcrun --sdk iphoneos --show-sdk-path
+
       - name: 安装与配置工程生成器 (XcodeGen)
         run: |
           echo "=== 正在准备 XcodeGen 环境 ==="
           brew install xcodegen || true
           xcodegen --version
+          
+          # 清理旧的空目录或残留
+          rm -rf Z30Control.xcodeproj
           
           echo "=== 正在自动生成 Xcode 原生工程 ==="
           xcodegen generate
@@ -38,6 +49,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES \
             COMPILER_INDEX_STORE_ENABLE=NO
 
       - name: 组装与封装为标准 iOS .ipa 安装包
