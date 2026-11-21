@@ -2,20 +2,16 @@
 //  UsbCameraManager.swift
 //  Z30Control
 //
-//  基于 Apple 原生 ImageCaptureCore 框架的 USB 数码相机硬件级直连管理器 (像素蛋糕/Capture One 同款底层)
-//  优势：
-//  1. 纯硬件总线枚举，无需 IP 地址，无需 192.168.1.1 虚拟网卡，插入 Type-C 即秒级识别
-//  2. 完美支持尼康 Z 30 等微单在 MTP/PTP 标准模式下的硬件直连
-//  3. 完美支持联机拍摄 (Tethering)：机身按下快门，iOS 立即通过 didAddItems 回调新照片，实现零延迟速传
+//  基于 Apple 原生 ImageCaptureCore 框架的 USB 数码相机硬件级直连管理器 (像素蛋糕同款底层)
+//  适配 iOS 16/17/18 严格协议签名
 //
 
 import Foundation
 import ImageCaptureCore
 import UIKit
 import Combine
-import Photos
 
-public final class UsbCameraManager: NSObject, ObservableObject, ICDeviceBrowserDelegate, ICCameraDeviceDelegate, ICCameraDeviceDownloadDelegate {
+public final class UsbCameraManager: NSObject, ObservableObject, ICDeviceBrowserDelegate, ICCameraDeviceDelegate {
     
     public static let shared = UsbCameraManager()
     
@@ -48,7 +44,6 @@ public final class UsbCameraManager: NSObject, ObservableObject, ICDeviceBrowser
         if deviceBrowser == nil {
             let browser = ICDeviceBrowser()
             browser.delegate = self
-            browser.browsingTypeMask = [.camera]
             self.deviceBrowser = browser
         }
         deviceBrowser?.start()
@@ -63,7 +58,7 @@ public final class UsbCameraManager: NSObject, ObservableObject, ICDeviceBrowser
         print("[UsbCameraManager] 已停止 USB 监听")
     }
     
-    // MARK: - ICDeviceBrowserDelegate 回调 (硬件插入即被捕获)
+    // MARK: - ICDeviceBrowserDelegate 回调
     public func deviceBrowser(_ browser: ICDeviceBrowser, didAdd device: ICDevice, moreComing: Bool) {
         print("[UsbCameraManager] 发现外接硬件设备: \(device.name ?? "未知设备")")
         guard let camera = device as? ICCameraDevice else { return }
@@ -85,7 +80,7 @@ public final class UsbCameraManager: NSObject, ObservableObject, ICDeviceBrowser
                 self.connectedDeviceName = ""
                 CameraConnectionService.shared.isConnected = false
                 CameraConnectionService.shared.statusMessage = "有线连接已断开"
-                CameraState.shared.isConnected = false
+                CameraConnectionService.shared.cameraState.isConnected = false
             }
         }
     }
@@ -98,10 +93,19 @@ public final class UsbCameraManager: NSObject, ObservableObject, ICDeviceBrowser
         }
     }
     
-    // MARK: - ICCameraDeviceDelegate 会话与联机
-    public func deviceDidOpenSession(_ device: ICDevice) {
-        print("[UsbCameraManager] 成功打开硬件会话: \(device.name ?? "")")
+    // MARK: - ICDeviceDelegate (会话生命周期)
+    public func deviceDidBecomeReady(_ device: ICDevice) {
+        print("[UsbCameraManager] 设备已就绪: \(device.name ?? "")")
+    }
+    
+    public func device(_ device: ICDevice, didOpenSessionWithError error: (any Error)?) {
+        if let error = error {
+            print("[UsbCameraManager] 打开会话失败: \(error)")
+            return
+        }
+        
         guard let camera = device as? ICCameraDevice else { return }
+        print("[UsbCameraManager] 成功打开硬件会话: \(device.name ?? "")")
         
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
@@ -114,68 +118,102 @@ public final class UsbCameraManager: NSObject, ObservableObject, ICDeviceBrowser
             CameraConnectionService.shared.isConnecting = false
             CameraConnectionService.shared.statusMessage = "已通过 USB 硬件连接: \(devName)"
             CameraConnectionService.shared.selectedModel = devName
-            CameraState.shared.isConnected = true
-            CameraState.shared.modelName = devName
+            CameraConnectionService.shared.cameraState.isConnected = true
+            CameraConnectionService.shared.cameraState.modelName = devName
             
             NikonTheme.triggerHaptic(style: .heavy)
         }
-        
-        // 请求联机拍摄通知 (Tethering: 相机按快门，iOS 即时捕获新照片)
-        camera.requestEnableTethering()
     }
     
-    public func device(_ device: ICDevice, didCloseSessionWithError error: Error?) {
+    public func device(_ device: ICDevice, didCloseSessionWithError error: (any Error)?) {
         print("[UsbCameraManager] 设备会话关闭: \(String(describing: error))")
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             self.isUsbConnected = false
             CameraConnectionService.shared.isConnected = false
-            CameraState.shared.isConnected = false
+            CameraConnectionService.shared.cameraState.isConnected = false
             CameraConnectionService.shared.statusMessage = "相机连接已断开"
         }
     }
     
-    // MARK: - 即拍即传核心：相机产生新照片 (didAddItems)
+    // MARK: - ICCameraDeviceDelegate 必须实现的协议方法
     public func cameraDevice(_ camera: ICCameraDevice, didAdd items: [ICCameraItem]) {
         print("[UsbCameraManager] 相机捕获到新素材，数量: \(items.count)")
         for item in items {
             guard let file = item as? ICCameraFile else { continue }
             print("[UsbCameraManager] 新拍摄照片: \(file.name ?? "未命名")")
             
-            // 异步请求下载或提取缩略图
-            let options: [ICDownloadOption: Any] = [
-                .targetDirectory: URL(fileURLWithPath: NSTemporaryDirectory()),
-                .saveAsFilename: file.name ?? "capture.jpg",
-                .overwriteLowResolutionFile: true
+            // 请求提取缩略图与元数据
+            file.requestThumbnailData(options: nil)
+            file.requestMetadata()
+            
+            // 请求下载文件到临时目录
+            let dirUrl = URL(fileURLWithPath: NSTemporaryDirectory())
+            let downloadOptions: [String: Any] = [
+                "ICDownloadsDirectoryURL": dirUrl,
+                "ICSaveAsFilename": file.name ?? "capture.jpg"
             ]
             
-            camera.requestDownloadFile(file, options: options, downloadDelegate: self)
+            camera.requestDownloadFile(
+                file,
+                options: downloadOptions,
+                downloadDelegate: self,
+                didDownloadSelector: #selector(didDownloadPhoto(_:error:options:contextInfo:)),
+                contextInfo: nil
+            )
         }
     }
     
-    // MARK: - ICCameraDeviceDownloadDelegate 下载完成
-    public func didDownloadFile(_ file: ICCameraFile, options: [ICDownloadOption : Any] = [:], contextInfo: UnsafeMutableRawPointer?) {
+    public func cameraDevice(_ camera: ICCameraDevice, didRemove items: [ICCameraItem]) {
+        print("[UsbCameraManager] 相机移除了素材: \(items.count)")
+    }
+    
+    public func cameraDevice(_ camera: ICCameraDevice, didReceiveThumbnail thumbnail: CGImage?, for item: ICCameraItem, error: (any Error)?) {
+        if let cgImg = thumbnail {
+            let uiImg = UIImage(cgImage: cgImg)
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.lastCapturedPhoto = uiImg
+                self.lastCapturedFilename = item.name ?? "NEW_PHOTO.JPG"
+            }
+        }
+    }
+    
+    public func cameraDevice(_ camera: ICCameraDevice, didReceiveMetadata metadata: [AnyHashable : Any]?, for item: ICCameraItem, error: (any Error)?) {
+        print("[UsbCameraManager] 收到照片元数据")
+    }
+    
+    // MARK: - 下载完成 Selector 回调
+    @objc private func didDownloadPhoto(_ file: ICCameraFile, error: Error?, options: [String: Any], contextInfo: UnsafeMutableRawPointer?) {
+        if let error = error {
+            print("[UsbCameraManager] 照片下载出错: \(error)")
+            return
+        }
+        
         let savedPath = (NSTemporaryDirectory() as NSString).appendingPathComponent(file.name ?? "capture.jpg")
-        print("[UsbCameraManager] 照片成功传输到手机本地: \(savedPath)")
+        print("[UsbCameraManager] 照片成功保存到本地临时路径: \(savedPath)")
         
         let loadedImage = UIImage(contentsOfFile: savedPath)
         
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             let name = file.name ?? "DSC_NEW.JPG"
-            let sizeStr = "\(file.fileSize / 1024 / 1024) MB"
+            let sizeMb = Double(file.fileSize) / 1024.0 / 1024.0
+            let sizeStr = String(format: "%.1f MB", sizeMb)
             
-            self.lastCapturedPhoto = loadedImage
+            if let img = loadedImage {
+                self.lastCapturedPhoto = img
+            }
             self.lastCapturedFilename = name
             self.lastCapturedExif = "原片传输 · \(sizeStr)"
             
             let item = CapturedPhotoItem(filename: name, image: loadedImage, date: Date(), sizeString: sizeStr)
             self.sessionCapturedPhotos.insert(item, at: 0)
             
-            // 触感反馈提示用户新照片已到
+            // 触感反馈提示
             NikonTheme.triggerHaptic(style: .medium)
             
-            // 自动存入系统相册 (如果用户开启或调用)
+            // 自动存入系统相册
             if let img = loadedImage {
                 UIImageWriteToSavedPhotosAlbum(img, nil, nil, nil)
             }
