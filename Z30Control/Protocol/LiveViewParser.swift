@@ -29,6 +29,13 @@ public struct LiveViewFrame {
     
     /// 抓取时间戳
     public let timestamp: TimeInterval
+    
+    #if canImport(UIKit)
+    /// 快捷解码为 UIImage
+    public var image: UIImage? {
+        return UIImage(data: jpegData)
+    }
+    #endif
 }
 
 /// 尼康 LiveView 帧解析器

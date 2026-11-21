@@ -102,6 +102,14 @@ public struct LiveViewMonitorView: View {
         )) { item in
             makeParamActionSheet(for: item.id)
         }
+        .onAppear {
+            if usbCamera.isUsbConnected {
+                usbCamera.startLiveView()
+            }
+        }
+        .onDisappear {
+            usbCamera.stopLiveView()
+        }
     }
     
     // MARK: - 监看核心视口 (支持实时图像渲染、触控对焦、参考线与即时回放)
@@ -112,6 +120,10 @@ public struct LiveViewMonitorView: View {
                 Group {
                     if let frameImg = streamService.currentFrame?.image {
                         Image(uiImage: frameImg)
+                            .resizable()
+                            .scaledToFit()
+                    } else if let usbLiveImg = usbCamera.currentLiveViewImage {
+                        Image(uiImage: usbLiveImg)
                             .resizable()
                             .scaledToFit()
                     } else if let lastPhoto = usbCamera.lastCapturedPhoto {
@@ -234,6 +246,60 @@ public struct LiveViewMonitorView: View {
                 endRadius: size.width * 0.8
             )
             
+            // 居中核心交互状态卡片 (消除死黑)
+            VStack(spacing: 14) {
+                if isDeviceConnected {
+                    if usbCamera.isLiveViewStreaming {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .scaleEffect(1.2)
+                        Text("正在拉取 Z 30 实时镜头画面...")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(.white)
+                    } else {
+                        Button(action: {
+                            NikonTheme.triggerHaptic(style: .medium)
+                            usbCamera.startLiveView()
+                        }) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "video.fill")
+                                    .font(.system(size: 15))
+                                Text("开启相机实时取景")
+                                    .font(.system(size: 14, weight: .bold))
+                            }
+                            .padding(.horizontal, 22)
+                            .padding(.vertical, 12)
+                            .background(NikonTheme.accentBlue)
+                            .foregroundColor(.white)
+                            .cornerRadius(24)
+                            .shadow(color: NikonTheme.accentBlue.opacity(0.4), radius: 10, y: 4)
+                        }
+                    }
+                    
+                    Text("💡 联机模式：按相机机身快门拍摄，成片将立即全屏回显并存入手机")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white.opacity(0.7))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                } else {
+                    Image(systemName: "cable.connector.slash")
+                        .font(.system(size: 36))
+                        .foregroundColor(.white.opacity(0.4))
+                    
+                    Text("未检测到相机信号")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.white.opacity(0.8))
+                    
+                    Text("请使用 USB-C 数据线将 iPhone 直连尼康 Z 30")
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.5))
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 18)
+            .background(Color.black.opacity(0.4))
+            .cornerRadius(16)
+            
             // 监视器实时状态徽标
             VStack(spacing: 8) {
                 Spacer()
@@ -241,7 +307,7 @@ public struct LiveViewMonitorView: View {
                     Circle()
                         .fill(isDeviceConnected ? NikonTheme.readyGreen : Color.orange)
                         .frame(width: 7, height: 7)
-                    Text(isDeviceConnected ? "USB 联机待命中 · 请使用相机快门拍摄即刻上屏" : "未检测到取景信号 · 请连接相机")
+                    Text(isDeviceConnected ? "USB 联机待命中 · Z 30 硬件就绪" : "未检测到取景信号 · 请连接相机")
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
                         .foregroundColor(.white.opacity(0.7))
                 }
@@ -450,6 +516,29 @@ public struct LiveViewMonitorView: View {
             .cornerRadius(12)
             
             Spacer()
+            
+            if isDeviceConnected {
+                Button(action: {
+                    NikonTheme.triggerHaptic(style: .medium)
+                    if usbCamera.isLiveViewStreaming {
+                        usbCamera.stopLiveView()
+                    } else {
+                        usbCamera.startLiveView()
+                    }
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: usbCamera.isLiveViewStreaming ? "video.fill" : "video.slash")
+                            .font(.system(size: 10, weight: .bold))
+                        Text(usbCamera.isLiveViewStreaming ? "取景中" : "启动取景")
+                            .font(.system(size: 11, weight: .bold))
+                    }
+                    .foregroundColor(usbCamera.isLiveViewStreaming ? .black : .white)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(usbCamera.isLiveViewStreaming ? NikonTheme.readyGreen : NikonTheme.accentBlue)
+                    .cornerRadius(12)
+                }
+            }
             
             // USB-C 有线直连指引药丸按钮
             Button(action: {

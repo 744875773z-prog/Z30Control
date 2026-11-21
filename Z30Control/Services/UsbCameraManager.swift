@@ -23,6 +23,13 @@ public final class UsbCameraManager: NSObject, ObservableObject, ICDeviceBrowser
     @Published public var lastCapturedExif: String = ""
     @Published public var sessionCapturedPhotos: [CapturedPhotoItem] = []
     
+    // USB PTP 实时取景状态
+    @Published public var isLiveViewStreaming: Bool = false
+    @Published public var currentLiveViewImage: UIImage? = nil
+    private var liveViewTimer: Timer?
+    private var isFetchingFrame: Bool = false
+    private var ptpTransactionID: UInt32 = 1
+    
     // 设备浏览器与当前相机实例
     private var deviceBrowser: ICDeviceBrowser?
     public private(set) var activeCamera: ICCameraDevice?
@@ -51,6 +58,7 @@ public final class UsbCameraManager: NSObject, ObservableObject, ICDeviceBrowser
     }
     
     public func stopListening() {
+        stopLiveView()
         deviceBrowser?.stop()
         activeCamera?.requestCloseSession()
         activeCamera = nil
@@ -125,6 +133,7 @@ public final class UsbCameraManager: NSObject, ObservableObject, ICDeviceBrowser
     }
     
     private func handleDeviceDisconnect() {
+        stopLiveView()
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             self.activeCamera = nil
@@ -229,6 +238,107 @@ public final class UsbCameraManager: NSObject, ObservableObject, ICDeviceBrowser
             // 自动存入相册
             if let img = loadedImage {
                 UIImageWriteToSavedPhotosAlbum(img, nil, nil, nil)
+            }
+        }
+    }
+    
+    // MARK: - USB PTP 实时取景 (Live View) 协议驱动
+    
+    /// 构建标准 USB PTP 命令数据容器 (Little-Endian)
+    private func buildPTPCommandPacket(opCode: UInt16, params: [UInt32] = []) -> Data {
+        var packet = Data()
+        let length = UInt32(12 + params.count * 4)
+        var lenLittle = length.littleEndian
+        packet.append(Data(bytes: &lenLittle, count: MemoryLayout<UInt32>.size))
+        
+        var typeLittle: UInt16 = 1 // 1 = Standard Command Block
+        packet.append(Data(bytes: &typeLittle, count: MemoryLayout<UInt16>.size))
+        
+        var codeLittle = opCode.littleEndian
+        packet.append(Data(bytes: &codeLittle, count: MemoryLayout<UInt16>.size))
+        
+        ptpTransactionID &+= 1
+        var transLittle = ptpTransactionID.littleEndian
+        packet.append(Data(bytes: &transLittle, count: MemoryLayout<UInt32>.size))
+        
+        for var p in params {
+            var pLittle = p.littleEndian
+            packet.append(Data(bytes: &pLittle, count: MemoryLayout<UInt32>.size))
+        }
+        return packet
+    }
+    
+    /// 开启尼康 USB 实时取景传感器数据流 (OpCode: 0x9201)
+    public func startLiveView() {
+        guard let camera = activeCamera, isUsbConnected else {
+            print("[UsbCameraManager] 相机未连接或未就绪，无法开启 LiveView")
+            return
+        }
+        guard !isLiveViewStreaming else { return }
+        
+        print("[UsbCameraManager] 发送尼康 StartLiveView (0x9201)...")
+        let startCmd = buildPTPCommandPacket(opCode: 0x9201)
+        
+        camera.requestSendPTPCommand(startCmd, outData: nil) { [weak self] (dataResponse, responseCodeData, error) in
+            if let error = error {
+                print("[UsbCameraManager] StartLiveView 响应: \(error)")
+            } else {
+                print("[UsbCameraManager] StartLiveView 命令已送达")
+            }
+            
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.isLiveViewStreaming = true
+                self.startFrameFetchTimer()
+            }
+        }
+    }
+    
+    /// 停止尼康 USB 实时取景传感器数据流 (OpCode: 0x9202)
+    public func stopLiveView() {
+        liveViewTimer?.invalidate()
+        liveViewTimer = nil
+        isFetchingFrame = false
+        
+        DispatchQueue.main.async { [weak self] in
+            self?.isLiveViewStreaming = false
+        }
+        
+        guard let camera = activeCamera, isUsbConnected else { return }
+        print("[UsbCameraManager] 发送尼康 EndLiveView (0x9202)...")
+        let endCmd = buildPTPCommandPacket(opCode: 0x9202)
+        camera.requestSendPTPCommand(endCmd, outData: nil) { _, _, _ in
+            print("[UsbCameraManager] EndLiveView 已完成")
+        }
+    }
+    
+    private func startFrameFetchTimer() {
+        liveViewTimer?.invalidate()
+        // 以 25 FPS 速率向尼康相机循环拉取实时取景帧
+        liveViewTimer = Timer.scheduledTimer(withTimeInterval: 0.04, repeats: true) { [weak self] _ in
+            self?.fetchLiveViewFrame()
+        }
+    }
+    
+    private func fetchLiveViewFrame() {
+        guard let camera = activeCamera, isLiveViewStreaming, !isFetchingFrame else { return }
+        isFetchingFrame = true
+        
+        let getCmd = buildPTPCommandPacket(opCode: 0x9203) // Nikon GetLiveViewImg
+        camera.requestSendPTPCommand(getCmd, outData: nil) { [weak self] (dataResponse, responseCodeData, error) in
+            defer { self?.isFetchingFrame = false }
+            guard let self = self, error == nil else { return }
+            
+            let payload = dataResponse.count > 0 ? dataResponse : responseCodeData
+            guard payload.count > 128 else { return }
+            
+            if let frame = LiveViewParser.parse(rawPayload: payload) {
+                DispatchQueue.main.async {
+                    if let img = frame.image {
+                        self.currentLiveViewImage = img
+                    }
+                    LiveViewStreamService.shared.updateFrame(frame)
+                }
             }
         }
     }
