@@ -17,41 +17,45 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>1.0.1</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>2</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
     
-    <!-- 本地局域网权限 (必须声明，否则 iOS 14+ 无法连接相机 Wi-Fi 15740 端口) -->
+    <!-- 彻底解决 iPhone 16 Pro Max / 灵动岛全尺寸全屏无黑边关键配置 -->
+    <key>UILaunchScreen</key>
+    <dict/>
+    
+    <!-- 本地局域网权限 (必须声明，支持 USB-C 虚拟以太网网卡与 Wi-Fi 15740 端口) -->
     <key>NSLocalNetworkUsageDescription</key>
-    <string>Z30 影控需要访问本地网络，以建立与尼康相机的 PTP/IP 高速连接，用于实时取景、参数调节与照片传输。</string>
+    <string>Z30 影控需要访问本地网络，以通过 USB-C 有线数据线或 Wi-Fi 建立与尼康相机的高速 PTP 通信信道，用于低延迟实时取景、机身参数控制与原始照片极速传输。</string>
     <key>NSBonjourServices</key>
     <array>
         <string>_ptp._tcp</string>
         <string>_ptp-ip._tcp</string>
     </array>
     
-    <!-- 系统相册读取与保存权限 (必须声明，否则无法保存照片到手机) -->
+    <!-- 系统相册读取与保存权限 -->
     <key>NSPhotoLibraryAddUsageDescription</key>
-    <string>我们需要保存权限，以便将从 Z30 相机下载的原始照片或套用胶片滤镜后的成片存入您的 iPhone 相册。</string>
+    <string>需要相册保存权限，以便将从 Z30 相机下载的原片或胶片滤镜成片存入手机相册。</string>
     <key>NSPhotoLibraryUsageDescription</key>
-    <string>需要访问相册，以显示您已从相机导入的照片与素材。</string>
+    <string>需要访问相册，以显示与管理您已从相机导入的照片。</string>
     
-    <!-- 蓝牙权限 (用于后续拓展 BLE 自动唤醒相机 Wi-Fi) -->
+    <!-- 蓝牙权限 (用于辅助唤醒相机) -->
     <key>NSBluetoothAlwaysUsageDescription</key>
-    <string>用于搜索并唤醒身边的尼康 Z30 相机。</string>
+    <string>用于搜索并唤醒身边的尼康微单相机。</string>
     <key>NSBluetoothPeripheralUsageDescription</key>
-    <string>用于连接尼康相机的蓝牙低功耗信道。</string>
+    <string>用于连接尼康相机的低功耗蓝牙信道。</string>
     
-    <!-- 后台下载传输模式 (确保摄影师锁屏或切后台时，相机打保护键仍能自动接收照片) -->
+    <!-- 后台下载传输模式 -->
     <key>UIBackgroundModes</key>
     <array>
         <string>fetch</string>
         <string>processing</string>
     </array>
     
-    <!-- 屏幕旋转支持 (支持横屏作为专业电影监视器) -->
+    <!-- 屏幕全方向自适应旋转 (支持专业横屏电影监视器与竖屏单手操控) -->
     <key>UISupportedInterfaceOrientations</key>
     <array>
         <string>UIInterfaceOrientationPortrait</string>
@@ -59,14 +63,8 @@
         <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
     
-    <!-- 外观默认偏好暗黑模式 -->
+    <!-- 界面外观支持系统暗色与浅色自适应 -->
     <key>UIUserInterfaceStyle</key>
-    <string>Dark</string>
-    
-    <key>UILaunchScreen</key>
-    <dict>
-        <key>UIColorName</key>
-        <string>black</string>
-    </dict>
+    <string>Automatic</string>
 </dict>
 </plist>

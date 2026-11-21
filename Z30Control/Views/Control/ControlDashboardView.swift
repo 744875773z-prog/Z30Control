@@ -2,7 +2,7 @@
 //  ControlDashboardView.swift
 //  Z30Control
 //
-//  相机全参数中控仪表盘 (像素级对齐专业控制台参考图)
+//  相机全参数中控仪表盘 (修复白底白字与重叠遮挡，专业高对比度暗黑影控设计)
 //
 
 import SwiftUI
@@ -20,47 +20,40 @@ public struct ControlDashboardView: View {
         self.onSwitchToLiveView = onSwitchToLiveView
     }
     
-    // 柔和优雅的米白/淡暖灰背景 (对齐原图 #F7F6F2)
-    private let pageBgColor = Color(red: 0.965, green: 0.957, blue: 0.945)
-    private let cardBgColor = Color.white
+    // 专业高对比暗黑影控调色盘
+    private let pageBgColor = NikonTheme.pitchBlack
+    private let cardBgColor = NikonTheme.surfaceDark
+    private let borderStroke = Color.white.opacity(0.12)
     
     public var body: some View {
-        VStack(spacing: 0) {
-            // 1. 顶部 Header 栏 (汉堡菜单、标题、对焦框取景切换、更多)
-            headerNavigationBar
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 6)
-            
-            // 2. 状态条 (绿点“就绪”、电量、WiFi 折叠药丸)
-            statusBannerSection
-                .padding(.horizontal, 16)
-                .padding(.bottom, 10)
-            
-            // 3. 可滚动内容区域
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 10) {
-                    // 硬件身份与镜头信息卡片
-                    hardwareCardsSection
-                    
-                    // 存储卡进度与画质格式卡片
-                    storageAndFormatSection
-                    
-                    // 标签筛选栏 (全部 / 编辑)
-                    tagFilterSection
-                    
-                    // 核心参数多宫格网格矩阵
-                    parameterGridSection
-                    
-                    Spacer(minLength: 90)
-                }
-                .padding(.horizontal, 14)
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 12) {
+                // 1. 顶部 Navigation 栏
+                headerNavigationBar
+                    .padding(.top, 48) // 适配灵动岛安全区
+                
+                // 2. 状态条 (绿点“就绪”、电量、WiFi 药丸)
+                statusBannerSection
+                
+                // 3. 硬件身份与镜头信息卡片
+                hardwareCardsSection
+                
+                // 4. 存储卡进度与画质格式卡片
+                storageAndFormatSection
+                
+                // 5. 标签筛选栏 (全部 / 编辑)
+                tagFilterSection
+                
+                // 6. 核心参数网格矩阵
+                parameterGridSection
+                
+                // 7. 底部控制台 (内置在滚动流末端，绝不发生悬浮重叠遮挡！)
+                bottomConsoleSection
+                    .padding(.top, 8)
+                
+                Spacer(minLength: 100) // 预留底部悬浮 TabBar 空间
             }
-            
-            // 4. 底部悬浮控制台 (照片回放、AF-ON、金色快门环、连拍模式)
-            floatingBottomConsole
-                .padding(.horizontal, 16)
-                .padding(.bottom, 78) // 预留悬浮 TabBar 空间
+            .padding(.horizontal, 16)
         }
         .background(pageBgColor.ignoresSafeArea())
         .sheet(isPresented: $showingConnectionWizard) {
@@ -88,44 +81,37 @@ public struct ControlDashboardView: View {
                 showingConnectionWizard = true
             }) {
                 Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundColor(Color.primary)
-                    .frame(width: 36, height: 36)
-                    .background(Color.black.opacity(0.04))
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(.white)
+                    .frame(width: 38, height: 38)
+                    .background(Color.white.opacity(0.1))
                     .clipShape(Circle())
             }
             
             Spacer()
             
-            Text("控制")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundColor(Color.primary)
+            Text("中控仪表盘")
+                .font(.system(size: 17, weight: .bold))
+                .foregroundColor(.white)
             
             Spacer()
             
-            HStack(spacing: 12) {
-                // 点击一键切换到“取景监看”模式
+            HStack(spacing: 10) {
+                // 点击一键切换到实时取景监看
                 Button(action: {
                     NikonTheme.triggerHaptic(style: .light)
                     onSwitchToLiveView?()
                 }) {
-                    Image(systemName: "viewfinder")
-                        .font(.system(size: 19, weight: .medium))
-                        .foregroundColor(Color.primary)
-                        .frame(width: 36, height: 36)
-                        .background(Color.black.opacity(0.04))
-                        .clipShape(Circle())
-                }
-                
-                Button(action: {
-                    NikonTheme.triggerHaptic(style: .light)
-                }) {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundColor(Color.primary)
-                        .frame(width: 36, height: 36)
-                        .background(Color.black.opacity(0.04))
-                        .clipShape(Circle())
+                    HStack(spacing: 4) {
+                        Image(systemName: "viewfinder")
+                        Text("监看")
+                    }
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.black)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(NikonTheme.nikonYellow)
+                    .cornerRadius(14)
                 }
             }
         }
@@ -136,13 +122,16 @@ public struct ControlDashboardView: View {
         HStack {
             HStack(spacing: 6) {
                 Circle()
-                    .fill(NikonTheme.readyGreen)
-                    .frame(width: 7, height: 7)
-                Text(cameraState.isConnected ? "就绪" : "待连接")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(Color.primary)
+                    .fill(cameraState.isConnected ? NikonTheme.readyGreen : Color.orange)
+                    .frame(width: 8, height: 8)
+                Text(cameraState.isConnected ? "机身在线" : "未连相机")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.white)
                 Image(systemName: "battery.75")
                     .font(.system(size: 13))
+                    .foregroundColor(NikonTheme.readyGreen)
+                Text("\(cameraState.batteryPercentage)%")
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundColor(.gray)
             }
             
@@ -150,17 +139,15 @@ public struct ControlDashboardView: View {
             
             // WiFi 状态药丸
             HStack(spacing: 4) {
-                Image(systemName: "wifi")
+                Image(systemName: "cable.connector")
                     .font(.system(size: 10, weight: .bold))
-                Text("Wi-Fi --")
-                    .font(.system(size: 11, weight: .medium))
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .bold))
+                Text(cameraState.isConnected ? "USB-C 有线" : "待插线")
+                    .font(.system(size: 11, weight: .semibold))
             }
-            .foregroundColor(Color(red: 0.88, green: 0.58, blue: 0.2))
+            .foregroundColor(.black)
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
-            .background(Color(red: 1.0, green: 0.94, blue: 0.88))
+            .background(cameraState.isConnected ? NikonTheme.readyGreen : NikonTheme.nikonYellow)
             .cornerRadius(12)
         }
     }
@@ -174,40 +161,39 @@ public struct ControlDashboardView: View {
                 showingConnectionWizard = true
             }) {
                 HStack(spacing: 8) {
-                    Image(systemName: "camera")
-                        .font(.system(size: 14))
-                        .foregroundColor(.gray)
+                    Image(systemName: "camera.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(NikonTheme.nikonYellow)
                     
-                    Text(cameraState.modelName.replacingOccurrences(of: "NIKON ", with: ""))
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundColor(Color.primary)
-                    
-                    Spacer()
-                    
-                    VStack(alignment: .trailing, spacing: 1) {
-                        Text(cameraState.firmwareVersion)
-                            .font(.system(size: 9, weight: .medium))
-                            .foregroundColor(.gray)
-                        Text(cameraState.serialNumber)
-                            .font(.system(size: 9, weight: .medium))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(cameraState.modelName)
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.white)
+                        Text("\(cameraState.firmwareVersion) · \(cameraState.serialNumber)")
+                            .font(.system(size: 9, weight: .medium, design: .monospaced))
                             .foregroundColor(.gray)
                     }
+                    
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10))
+                        .foregroundColor(.gray)
                 }
                 .padding(.horizontal, 12)
                 .frame(height: 52)
                 .background(cardBgColor)
                 .cornerRadius(14)
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.black.opacity(0.04), lineWidth: 0.5))
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(borderStroke, lineWidth: 0.8))
             }
             
             // 镜头卡片
             HStack(spacing: 8) {
                 Image(systemName: "camera.aperture")
-                    .font(.system(size: 14))
+                    .font(.system(size: 16))
                     .foregroundColor(.gray)
-                Text("Z 16-50mm f/3.5-6.3")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(Color.primary)
+                Text("Z 16-50mm VR")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.white)
                     .lineLimit(1)
             }
             .padding(.horizontal, 12)
@@ -215,162 +201,109 @@ public struct ControlDashboardView: View {
             .frame(height: 52)
             .background(cardBgColor)
             .cornerRadius(14)
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.black.opacity(0.04), lineWidth: 0.5))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(borderStroke, lineWidth: 0.8))
         }
     }
     
     // MARK: - 4. 存储与画质卡片
     private var storageAndFormatSection: some View {
         HStack(spacing: 10) {
-            // 存储卡容量指示 (双插槽或单插槽)
-            VStack(alignment: .leading, spacing: 6) {
-                // CFe 模拟槽或 SD 槽
-                VStack(spacing: 3) {
-                    HStack {
-                        Text("CFe")
-                            .font(.system(size: 8, weight: .bold))
-                            .padding(.horizontal, 3)
-                            .padding(.vertical, 1)
-                            .background(Color.yellow.opacity(0.3))
-                            .cornerRadius(3)
-                            .foregroundColor(.orange)
-                        
-                        Spacer()
-                        Text("748/1024GB · 73%")
-                            .font(.system(size: 9, weight: .medium))
-                            .foregroundColor(.gray)
-                    }
-                    ProgressView(value: 748, total: 1024)
-                        .tint(Color(red: 0.95, green: 0.75, blue: 0.1))
-                        .scaleEffect(x: 1, y: 0.6, anchor: .center)
+            // 存储卡容量指示
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    Text("SD 卡")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(NikonTheme.nikonYellow)
+                    Spacer()
+                    Text("\(String(format: "%.0f", cameraState.cardUsedGB))/\(Int(cameraState.cardTotalGB))GB · \(cameraState.cardUsagePercent)%")
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .foregroundColor(.gray)
                 }
-                
-                // SD 槽
-                VStack(spacing: 3) {
-                    HStack {
-                        Text("SD")
-                            .font(.system(size: 8, weight: .bold))
-                            .padding(.horizontal, 3)
-                            .padding(.vertical, 1)
-                            .background(Color.yellow.opacity(0.3))
-                            .cornerRadius(3)
-                            .foregroundColor(.orange)
-                        
-                        Spacer()
-                        Text("\(String(format: "%.0f", cameraState.cardUsedGB))/\(Int(cameraState.cardTotalGB))GB · \(cameraState.cardUsagePercent)%")
-                            .font(.system(size: 9, weight: .medium))
-                            .foregroundColor(.gray)
-                    }
-                    ProgressView(value: cameraState.cardUsedGB, total: cameraState.cardTotalGB)
-                        .tint(Color(red: 0.95, green: 0.75, blue: 0.1))
-                        .scaleEffect(x: 1, y: 0.6, anchor: .center)
-                }
+                ProgressView(value: cameraState.cardUsedGB, total: cameraState.cardTotalGB)
+                    .tint(NikonTheme.nikonYellow)
+                    .scaleEffect(x: 1, y: 0.7, anchor: .center)
             }
             .padding(10)
             .frame(maxWidth: .infinity)
-            .frame(height: 64)
+            .frame(height: 58)
             .background(cardBgColor)
             .cornerRadius(14)
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.black.opacity(0.04), lineWidth: 0.5))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(borderStroke, lineWidth: 0.8))
             
             // 图像画质与分辨率卡片
             HStack(spacing: 8) {
-                Image(systemName: "photo")
+                Image(systemName: "photo.fill")
                     .font(.system(size: 16))
-                    .foregroundColor(Color.orange.opacity(0.8))
+                    .foregroundColor(NikonTheme.nikonYellow)
                 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("5568x3712")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(Color.primary)
-                    Text("RAW+JPEG/HEIF (基本)")
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(cameraState.resolution)
+                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                        .foregroundColor(.white)
+                    Text("RAW+JPEG/HEIF")
                         .font(.system(size: 9, weight: .medium))
                         .foregroundColor(.gray)
-                        .lineLimit(1)
                 }
             }
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(height: 64)
+            .frame(height: 58)
             .background(cardBgColor)
             .cornerRadius(14)
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.black.opacity(0.04), lineWidth: 0.5))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(borderStroke, lineWidth: 0.8))
         }
     }
     
-    // MARK: - 5. 标签筛选条 (全部 / 编辑)
+    // MARK: - 5. 标签筛选条
     private var tagFilterSection: some View {
         HStack(spacing: 8) {
-            HStack(spacing: 4) {
-                Image(systemName: "square.grid.2x2")
-                    .font(.system(size: 11))
-                Text("全部")
-                    .font(.system(size: 12, weight: .semibold))
-            }
-            .foregroundColor(selectedFilterTag == 0 ? Color.primary : .gray)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 6)
-            .background(selectedFilterTag == 0 ? Color.black.opacity(0.08) : Color.clear)
-            .cornerRadius(14)
-            .onTapGesture {
-                NikonTheme.triggerHaptic(style: .light)
-                selectedFilterTag = 0
-            }
-            
-            HStack(spacing: 4) {
-                Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 11))
-                Text("编辑")
-                    .font(.system(size: 12, weight: .semibold))
-            }
-            .foregroundColor(selectedFilterTag == 1 ? Color.primary : .gray)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 6)
-            .background(selectedFilterTag == 1 ? Color.black.opacity(0.08) : Color.clear)
-            .cornerRadius(14)
-            .onTapGesture {
-                NikonTheme.triggerHaptic(style: .light)
-                selectedFilterTag = 1
-            }
-            
+            tagFilterButton(title: "全部参数", icon: "square.grid.2x2", tag: 0)
+            tagFilterButton(title: "常用编辑", icon: "slider.horizontal.3", tag: 1)
             Spacer()
         }
-        .padding(.top, 4)
+        .padding(.top, 2)
     }
     
-    // MARK: - 6. 参数矩阵 (3列圆角卡片)
-    private var parameterGridSection: some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-            // 第 1 行：核心三要素
-            standardGridCard(icon: "timer", title: "快门", value: cameraState.shutterSpeed, hasIndicator: true)
-            standardGridCard(icon: "camera.aperture", title: "光圈", value: cameraState.aperture, hasIndicator: true)
-            isoGridCard
-            
-            // 第 2 行：拍摄、白平衡、测光
-            standardGridCard(icon: "dial.min", title: "拍摄模式", value: cameraState.exposureMode.rawValue.prefix(4).description, hasIndicator: true)
-            standardGridCard(icon: "drop.fill", title: "白平衡", value: cameraState.whiteBalance.rawValue.components(separatedBy: " ").first ?? "自动", hasIndicator: true)
-            standardGridCard(icon: "viewfinder", title: "测光", value: cameraState.meteringMode.rawValue, hasIndicator: false)
-            
-            // 第 3 行：曝光补偿、对焦、区域
-            standardGridCard(icon: "plusminus", title: "± EV", value: cameraState.exposureCompensation, hasIndicator: true)
-            standardGridCard(icon: "scope", title: "对焦", value: cameraState.focusMode.rawValue, hasIndicator: true)
-            standardGridCard(icon: "square.dashed", title: "AF 区域", value: cameraState.afAreaMode, hasIndicator: true)
-            
-            // 第 4 行：镜头、色调模式、优化校准
-            standardGridCard(icon: "circle.grid.2x2", title: "镜头 ID", value: "Z 16-50mm\nf/3.5-6.3", hasIndicator: false)
-            standardGridCard(icon: "circle.lefthalf.filled", title: "色调模式", value: "SDR", hasIndicator: true)
-            pictureControlGridCard
-            
-            // 第 5 行：减震
-            standardGridCard(icon: "waveform.path", title: "减震", value: "开 (Normal)", hasIndicator: false)
+    private func tagFilterButton(title: String, icon: String, tag: Int) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon).font(.system(size: 10))
+            Text(title).font(.system(size: 11, weight: .bold))
+        }
+        .foregroundColor(selectedFilterTag == tag ? .black : .gray)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 5)
+        .background(selectedFilterTag == tag ? NikonTheme.nikonYellow : Color.white.opacity(0.08))
+        .cornerRadius(12)
+        .onTapGesture {
+            NikonTheme.triggerHaptic(style: .light)
+            selectedFilterTag = tag
         }
     }
     
-    // MARK: - 通用多宫格卡片 (右边缘黄色指示条)
-    private func standardGridCard(icon: String, title: String, value: String, hasIndicator: Bool) -> some View {
+    // MARK: - 6. 参数矩阵 (3列高对比黑金圆角卡片)
+    private var parameterGridSection: some View {
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+            gridCard(icon: "timer", title: "快门", value: cameraState.shutterSpeed, hasIndicator: true)
+            gridCard(icon: "camera.aperture", title: "光圈", value: cameraState.aperture, hasIndicator: true)
+            isoGridCard
+            
+            gridCard(icon: "dial.min", title: "拍摄模式", value: cameraState.exposureMode.rawValue.prefix(4).description, hasIndicator: true)
+            gridCard(icon: "drop.fill", title: "白平衡", value: cameraState.whiteBalance.rawValue.components(separatedBy: " ").first ?? "自动", hasIndicator: true)
+            gridCard(icon: "viewfinder", title: "测光", value: cameraState.meteringMode.rawValue, hasIndicator: false)
+            
+            gridCard(icon: "plusminus", title: "± EV", value: cameraState.exposureCompensation, hasIndicator: true)
+            gridCard(icon: "scope", title: "对焦", value: cameraState.focusMode.rawValue, hasIndicator: true)
+            gridCard(icon: "square.dashed", title: "AF 区域", value: cameraState.afAreaMode, hasIndicator: true)
+            
+            gridCard(icon: "circle.grid.2x2", title: "镜头", value: "16-50mm", hasIndicator: false)
+            gridCard(icon: "circle.lefthalf.filled", title: "色调模式", value: "SDR", hasIndicator: true)
+            pictureControlGridCard
+        }
+    }
+    
+    private func gridCard(icon: String, title: String, value: String, hasIndicator: Bool) -> some View {
         HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 4) {
-                // 顶部小图标与名称
+            VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 4) {
                     Image(systemName: icon)
                         .font(.system(size: 10))
@@ -379,38 +312,32 @@ public struct ControlDashboardView: View {
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(.gray)
                 }
-                
                 Spacer(minLength: 0)
-                
-                // 大字主数值
                 Text(value)
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(Color.primary)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
+                    .font(.system(size: 13, weight: .black, design: .monospaced))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
             }
             .padding(10)
             
             Spacer(minLength: 0)
             
-            // 右边缘黄色可调微指示条
             if hasIndicator {
                 RoundedRectangle(cornerRadius: 1.5)
-                    .fill(Color(red: 0.95, green: 0.75, blue: 0.15))
+                    .fill(NikonTheme.nikonYellow)
                     .frame(width: 3, height: 16)
                     .padding(.trailing, 6)
             }
         }
-        .frame(height: 72)
+        .frame(height: 64)
         .background(cardBgColor)
-        .cornerRadius(14)
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.black.opacity(0.04), lineWidth: 0.5))
+        .cornerRadius(12)
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(borderStroke, lineWidth: 0.8))
     }
     
-    // ISO 专属卡片 (带自动 A 标与双层数值)
     private var isoGridCard: some View {
         HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 4) {
                     Image(systemName: "sun.max")
                         .font(.system(size: 10))
@@ -419,42 +346,33 @@ public struct ControlDashboardView: View {
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(.gray)
                     Spacer()
-                    // 黄色圆圈 A 标记
                     Text("A")
                         .font(.system(size: 9, weight: .bold))
-                        .foregroundColor(.white)
+                        .foregroundColor(.black)
                         .frame(width: 14, height: 14)
-                        .background(Color(red: 0.95, green: 0.75, blue: 0.15))
+                        .background(NikonTheme.nikonYellow)
                         .clipShape(Circle())
                 }
-                
                 Spacer(minLength: 0)
-                
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("基础 \(cameraState.isoBase)")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(.gray)
-                    Text("实际 \(cameraState.isoActual)")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(Color.primary)
-                }
+                Text(cameraState.isoActual)
+                    .font(.system(size: 13, weight: .black, design: .monospaced))
+                    .foregroundColor(.white)
             }
             .padding(10)
         }
-        .frame(height: 72)
+        .frame(height: 64)
         .background(cardBgColor)
-        .cornerRadius(14)
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.black.opacity(0.04), lineWidth: 0.5))
+        .cornerRadius(12)
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(borderStroke, lineWidth: 0.8))
     }
     
-    // 优化校准专属卡片 (点击调出选择器，带 i 图标)
     private var pictureControlGridCard: some View {
         Button(action: {
             NikonTheme.triggerHaptic(style: .medium)
             showingPictureControlPicker = true
         }) {
             HStack(spacing: 0) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 4) {
                         Image(systemName: "slider.horizontal.3")
                             .font(.system(size: 10))
@@ -465,98 +383,83 @@ public struct ControlDashboardView: View {
                         Spacer()
                         Image(systemName: "info.circle")
                             .font(.system(size: 10))
-                            .foregroundColor(Color(red: 0.95, green: 0.75, blue: 0.15))
+                            .foregroundColor(NikonTheme.nikonYellow)
                     }
-                    
                     Spacer(minLength: 0)
-                    
                     Text(cameraState.pictureControl.rawValue.components(separatedBy: " ").first ?? "标准")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(Color.primary)
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(.white)
                 }
                 .padding(10)
             }
-            .frame(height: 72)
+            .frame(height: 64)
             .background(cardBgColor)
-            .cornerRadius(14)
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.black.opacity(0.04), lineWidth: 0.5))
+            .cornerRadius(12)
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(borderStroke, lineWidth: 0.8))
         }
     }
     
-    // MARK: - 7. 悬浮底座 (回放、AF-ON、金色光环快门、连拍模式)
-    private var floatingBottomConsole: some View {
+    // MARK: - 7. 嵌入式底部控制台 (位于文档流底部，绝不悬浮重叠遮挡)
+    private var bottomConsoleSection: some View {
         HStack(spacing: 20) {
-            // 照片回放
             Button(action: {
                 NikonTheme.triggerHaptic(style: .light)
             }) {
                 Image(systemName: "photo")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundColor(Color.primary)
+                    .font(.system(size: 18))
+                    .foregroundColor(.white)
                     .frame(width: 44, height: 44)
-                    .background(Color.black.opacity(0.05))
+                    .background(Color.white.opacity(0.1))
                     .clipShape(RoundedRectangle(cornerRadius: 12))
             }
             
             Spacer()
             
-            // AF-ON 胶囊对焦按钮
             Button(action: {
                 NikonTheme.triggerHaptic(style: .medium)
             }) {
                 Text("AF-ON")
                     .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(Color.primary)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(Color.black.opacity(0.07))
-                    .cornerRadius(16)
+                    .foregroundColor(NikonTheme.nikonYellow)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
+                    .background(Color.white.opacity(0.1))
+                    .cornerRadius(18)
+                    .overlay(RoundedRectangle(cornerRadius: 18).stroke(NikonTheme.nikonYellow.opacity(0.6), lineWidth: 1.5))
             }
             
-            // 金色光环大快门按键
             Button(action: {
                 NikonTheme.triggerHaptic(style: .heavy)
+                cameraState.remainingShots = max(0, cameraState.remainingShots - 1)
             }) {
                 ZStack {
-                    // 外层金色光环
                     Circle()
-                        .stroke(
-                            LinearGradient(
-                                colors: [
-                                    Color(red: 1.0, green: 0.88, blue: 0.2),
-                                    Color(red: 0.95, green: 0.72, blue: 0.1),
-                                    Color(red: 1.0, green: 0.9, blue: 0.3)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 4
-                        )
+                        .stroke(NikonTheme.nikonYellow, lineWidth: 4)
                         .frame(width: 58, height: 58)
-                        .shadow(color: Color.yellow.opacity(0.3), radius: 6, x: 0, y: 0)
-                    
-                    // 内层白色按键
+                        .shadow(color: NikonTheme.nikonYellow.opacity(0.5), radius: 6, x: 0, y: 0)
                     Circle()
                         .fill(Color.white)
-                        .frame(width: 46, height: 46)
-                        .shadow(color: Color.black.opacity(0.1), radius: 3, x: 0, y: 1)
+                        .frame(width: 44, height: 44)
                 }
             }
             
             Spacer()
             
-            // 拍摄 / 连拍切换
             Button(action: {
                 NikonTheme.triggerHaptic(style: .light)
             }) {
                 Image(systemName: "camera.badge.ellipsis")
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundColor(Color.primary)
+                    .font(.system(size: 18))
+                    .foregroundColor(.white)
                     .frame(width: 44, height: 44)
-                    .background(Color.black.opacity(0.05))
+                    .background(Color.white.opacity(0.1))
                     .clipShape(RoundedRectangle(cornerRadius: 12))
             }
         }
         .padding(.horizontal, 10)
+        .padding(.vertical, 12)
+        .background(cardBgColor)
+        .cornerRadius(18)
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(borderStroke, lineWidth: 0.8))
     }
 }

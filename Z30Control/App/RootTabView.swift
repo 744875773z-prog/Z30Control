@@ -2,106 +2,82 @@
 //  RootTabView.swift
 //  Z30Control
 //
-//  主页面 4 大核心 Tab 导航底座 (控制 / 速传 / 图库 / 设置)
-//  支持对齐专业控制台参考图的沉浸式悬浮胶囊导航栏与高亮选中背景
+//  主页面 4 大核心 Tab 导航底座 (监看 / 仪表盘 / 速传 / 图库)
+//  默认启动进入专业实时取景电影监看台，完美适配 iPhone 16 Pro Max 全屏与横竖屏旋转
 //
 
 import SwiftUI
 
 public enum MainTabItem: Int, CaseIterable {
-    case control = 0
-    case fastTransfer = 1
-    case gallery = 2
-    case settings = 3
+    case liveView = 0   // 实时取景监看 (对齐网页版默认首页)
+    case dashboard = 1  // 机身中控仪表盘
+    case fastTransfer = 2 // 相机保护键秒级速传
+    case gallery = 3    // 图库与 SD 卡素材管理
     
     var title: String {
         switch self {
-        case .control: return "控制"
+        case .liveView: return "监看"
+        case .dashboard: return "中控"
         case .fastTransfer: return "速传"
         case .gallery: return "图库"
-        case .settings: return "设置"
         }
     }
     
     var iconName: String {
         switch self {
-        case .control: return "camera.fill"
+        case .liveView: return "video.fill"
+        case .dashboard: return "slider.horizontal.3"
         case .fastTransfer: return "dot.radiowaves.left.and.right"
         case .gallery: return "photo.stack.fill"
-        case .settings: return "gearshape.fill"
         }
     }
 }
 
 public struct RootTabView: View {
     @StateObject private var cameraState = CameraState()
-    @State private var selectedTab: MainTabItem = .control
-    @State private var controlSubMode: Int = 1 // 默认进入控制仪表盘模式 (0: 实时取景监看, 1: 硬件中控仪表盘)
+    @State private var selectedTab: MainTabItem = .liveView // 默认直接进入实时取景监看！
     
     public init() {}
     
     public var body: some View {
-        ZStack(alignment: .bottom) {
-            // MARK: - 主页面内容分发
-            Group {
-                switch selectedTab {
-                case .control:
-                    if controlSubMode == 0 {
-                        ZStack(alignment: .topTrailing) {
-                            LiveViewMonitorView(cameraState: cameraState)
-                            
-                            // 右上角浮动返回仪表盘按钮
-                            Button(action: {
-                                NikonTheme.triggerHaptic(style: .light)
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                    controlSubMode = 1
-                                }
-                            }) {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "slider.vertical.3")
-                                    Text("仪表盘")
-                                }
-                                .font(.system(size: 11, weight: .bold))
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
-                                .background(Color.black.opacity(0.75))
-                                .foregroundColor(NikonTheme.nikonYellow)
-                                .cornerRadius(14)
-                                .overlay(RoundedRectangle(cornerRadius: 14).stroke(NikonTheme.nikonYellow.opacity(0.8), lineWidth: 1))
-                            }
-                            .padding(.top, 44)
-                            .padding(.trailing, 16)
-                        }
-                    } else {
+        GeometryReader { geometry in
+            let isLandscape = geometry.size.width > geometry.size.height
+            
+            ZStack(alignment: .bottom) {
+                // MARK: - 主页面内容分发 (沉浸式全屏)
+                Group {
+                    switch selectedTab {
+                    case .liveView:
+                        LiveViewMonitorView(cameraState: cameraState)
+                    case .dashboard:
                         ControlDashboardView(cameraState: cameraState, onSwitchToLiveView: {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                controlSubMode = 0
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
+                                selectedTab = .liveView
                             }
                         })
+                    case .fastTransfer:
+                        FastTransferView()
+                    case .gallery:
+                        CameraGalleryView()
                     }
-                    
-                case .fastTransfer:
-                    FastTransferView()
-                    
-                case .gallery:
-                    CameraGalleryView()
-                    
-                case .settings:
-                    SettingsView(cameraState: cameraState)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .ignoresSafeArea() // 彻底消除 Letterbox 黑边，铺满 iPhone 16 Pro Max
+                
+                // MARK: - 底部悬浮高亮胶囊 TabBar
+                // 横屏下自动隐藏底部 TabBar，将整块屏幕完整让给监视器画面！竖屏下保留
+                if !isLandscape {
+                    customFloatingTabBar
+                        .padding(.bottom, max(geometry.safeAreaInsets.bottom, 12))
+                        .padding(.horizontal, 20)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            
-            // MARK: - 底部悬浮高亮胶囊 TabBar (对齐参考图样式)
-            if !(selectedTab == .control && controlSubMode == 0) {
-                customFloatingTabBar
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
+            .ignoresSafeArea(.keyboard, edges: .bottom)
         }
-        .ignoresSafeArea(.keyboard, edges: .bottom)
     }
     
-    // MARK: - 自定义悬浮胶囊 TabBar
+    // MARK: - 自定义高对比悬浮胶囊 TabBar
     private var customFloatingTabBar: some View {
         HStack(spacing: 0) {
             ForEach(MainTabItem.allCases, id: \.self) { tab in
@@ -113,24 +89,25 @@ public struct RootTabView: View {
                         selectedTab = tab
                     }
                 }) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 5) {
                         Image(systemName: tab.iconName)
-                            .font(.system(size: isSelected ? 16 : 16, weight: isSelected ? .bold : .medium))
-                            .foregroundColor(isSelected ? Color(red: 0.9, green: 0.68, blue: 0.0) : Color.gray.opacity(0.8))
+                            .font(.system(size: isSelected ? 15 : 14, weight: isSelected ? .bold : .medium))
+                            .foregroundColor(isSelected ? .black : Color.white.opacity(0.7))
                         
                         if isSelected {
                             Text(tab.title)
                                 .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(Color(red: 0.9, green: 0.68, blue: 0.0))
+                                .foregroundColor(.black)
                         }
                     }
-                    .frame(height: 38)
+                    .frame(height: 36)
                     .frame(maxWidth: .infinity)
                     .background(
                         Group {
                             if isSelected {
-                                RoundedRectangle(cornerRadius: 19)
-                                    .fill(Color(red: 1.0, green: 0.94, blue: 0.76)) // 柔和温润的浅黄高亮药丸底
+                                RoundedRectangle(cornerRadius: 18)
+                                    .fill(NikonTheme.nikonYellow) // 醒目高对比的经典尼康亮黄！
+                                    .shadow(color: NikonTheme.nikonYellow.opacity(0.4), radius: 6, x: 0, y: 1)
                             } else {
                                 Color.clear
                             }
@@ -140,18 +117,16 @@ public struct RootTabView: View {
                 .buttonStyle(PlainButtonStyle())
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 5)
         .background(
-            RoundedRectangle(cornerRadius: 26)
-                .fill(Color.white.opacity(0.96))
-                .shadow(color: Color.black.opacity(0.08), radius: 10, x: 0, y: 3)
+            RoundedRectangle(cornerRadius: 24)
+                .fill(Color(red: 0.12, green: 0.12, blue: 0.14).opacity(0.92)) // 深色毛玻璃高对比底座
+                .shadow(color: Color.black.opacity(0.5), radius: 14, x: 0, y: 4)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 26)
-                        .stroke(Color.black.opacity(0.06), lineWidth: 0.5)
+                    RoundedRectangle(cornerRadius: 24)
+                        .stroke(Color.white.opacity(0.15), lineWidth: 0.8)
                 )
         )
-        .padding(.horizontal, 16)
-        .padding(.bottom, 12)
     }
 }
