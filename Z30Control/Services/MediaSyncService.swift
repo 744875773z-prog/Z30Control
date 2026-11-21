@@ -201,6 +201,8 @@ public final class MediaSyncService: ObservableObject {
             }
         }
     }
+    
+    private func setupMockData() {
         let now = Date()
         self.mediaItems = [
             CameraMediaItem(id: 1001, filename: "DSC_2641.JPG", sizeBytes: 5_662_310, format: .jpeg, captureDate: now.addingTimeInterval(-120), isProtected: true, isDownloaded: true),
