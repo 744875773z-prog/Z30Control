@@ -104,22 +104,43 @@ public struct LiveViewMonitorView: View {
         }
     }
     
-    // MARK: - 监看核心视口 (支持 Metal 渲染、触控对焦、参考线与即时回放)
+    // MARK: - 监看核心视口 (支持实时图像渲染、触控对焦、参考线与即时回放)
     private func cameraViewport(isLandscape: Bool) -> some View {
         GeometryReader { geo in
             ZStack {
-                // 背景监看画面 (高拟真模拟图像 / 真实 PTP LiveView 帧)
-                Color(red: 0.12, green: 0.13, blue: 0.15)
-                    .overlay(
-                        VStack(spacing: 8) {
-                            Image(systemName: "video.fill")
-                                .font(.system(size: isLandscape ? 48 : 40))
-                                .foregroundColor(.white.opacity(0.18))
-                            Text(isDeviceConnected ? "实时联机拍摄就绪 (USB-C 60 FPS)" : "实时模拟监看 (未接相机)")
-                                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                                .foregroundColor(.white.opacity(0.35))
-                        }
-                    )
+                // 1. 核心画面渲染层 (优先渲染真实视频流 / 最新快门成片 / 光学景深取景底图)
+                Group {
+                    if let frameImg = streamService.currentFrame?.image {
+                        Image(uiImage: frameImg)
+                            .resizable()
+                            .scaledToFit()
+                    } else if let lastPhoto = usbCamera.lastCapturedPhoto {
+                        Image(uiImage: lastPhoto)
+                            .resizable()
+                            .scaledToFit()
+                            .overlay(
+                                VStack {
+                                    Spacer()
+                                    HStack {
+                                        Text("📷 最新联机拍摄成片")
+                                            .font(.system(size: 11, weight: .bold))
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(Color.black.opacity(0.65))
+                                            .foregroundColor(.white)
+                                            .cornerRadius(6)
+                                        Spacer()
+                                    }
+                                    .padding(12)
+                                }
+                            )
+                    } else {
+                        // 具有电影景深感与动态光斑的高拟真光学实景监看底图 (绝非死黑图标)
+                        photographicLiveViewBackground(size: geo.size)
+                    }
+                }
+                .frame(width: geo.size.width, height: geo.size.height)
+                .clipped()
                 
                 // 构图三等分线
                 if isShowingGrid && !isCleanScreen {
@@ -174,6 +195,61 @@ public struct LiveViewMonitorView: View {
                         withAnimation { self.touchFocusPosition = nil }
                     }
                 }
+            }
+        }
+    }
+    
+    // MARK: - 真实拟真光学取景底图 (消除死黑画面)
+    private func photographicLiveViewBackground(size: CGSize) -> some View {
+        ZStack {
+            // 真实电影级渐变景深与虚化光斑
+            LinearGradient(
+                gradient: Gradient(colors: [
+                    Color(red: 0.16, green: 0.18, blue: 0.22),
+                    Color(red: 0.10, green: 0.11, blue: 0.14),
+                    Color(red: 0.08, green: 0.09, blue: 0.11)
+                ]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            
+            // 虚化光斑光圈模拟 (焦外散景 Bokeh)
+            Circle()
+                .fill(Color.blue.opacity(0.12))
+                .frame(width: size.width * 0.7, height: size.width * 0.7)
+                .blur(radius: 50)
+                .offset(x: -size.width * 0.2, y: -size.height * 0.15)
+            
+            Circle()
+                .fill(Color.orange.opacity(0.08))
+                .frame(width: size.width * 0.5, height: size.width * 0.5)
+                .blur(radius: 40)
+                .offset(x: size.width * 0.25, y: size.height * 0.2)
+            
+            // 光学暗角 (Vignette)
+            RadialGradient(
+                gradient: Gradient(colors: [Color.clear, Color.black.opacity(0.45)]),
+                center: .center,
+                startRadius: size.width * 0.35,
+                endRadius: size.width * 0.8
+            )
+            
+            // 监视器实时状态徽标
+            VStack(spacing: 8) {
+                Spacer()
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(isDeviceConnected ? NikonTheme.readyGreen : Color.orange)
+                        .frame(width: 7, height: 7)
+                    Text(isDeviceConnected ? "USB 联机待命中 · 请使用相机快门拍摄即刻上屏" : "未检测到取景信号 · 请连接相机")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.7))
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color.black.opacity(0.55))
+                .cornerRadius(12)
+                .padding(.bottom, 90)
             }
         }
     }
@@ -758,7 +834,29 @@ public struct LiveViewMonitorView: View {
                             .foregroundColor(.secondary)
                     }
                     
-                    // 步骤 3: 立即重新探测
+                    // 模式说明: USB 联机 vs Wi-Fi 取景
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Circle().fill(NikonTheme.nikonYellow).frame(width: 22, height: 22)
+                                .overlay(Text("3").font(.system(size: 12, weight: .bold)).foregroundColor(.black))
+                            Text("两种取景与传输工作流说明")
+                                .font(.system(size: 15, weight: .bold))
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("• 【USB-C 有线模式】（当前）：像素蛋糕同款底层，用于高保真联机拍摄与拍立得速传。使用机身快门拍摄，照片瞬间秒传至手机并存入相册。")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                            Text("• 【Wi-Fi 模式】：若需要无线 60 帧实时镜头画面预览与远程调参，在相机上按 MENU ➔ 连接至智能设备 ➔ 开启 Wi-Fi，手机连入相机热点即可。")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(12)
+                        .background(Color.blue.opacity(0.08))
+                        .cornerRadius(10)
+                    }
+                    
+                    // 步骤 4: 立即重新探测
                     Button(action: {
                         NikonTheme.triggerHaptic(style: .medium)
                         showingWiredHelp = false
