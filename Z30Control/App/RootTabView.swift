@@ -40,7 +40,6 @@ public struct RootTabView: View {
     
     public var body: some View {
         GeometryReader { geometry in
-            let isLandscape = geometry.size.width > geometry.size.height
             let bottomSafeArea = geometry.safeAreaInsets.bottom
 
             VStack(spacing: 0) {
@@ -65,10 +64,11 @@ public struct RootTabView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 
-                // MARK: - 底部 TabBar (绝对贴底，绝不悬空，横屏下自动隐藏)
-                if !isLandscape {
-                    pureWhiteBlueTabBar(bottomInset: bottomSafeArea)
-                }
+                // MARK: - 底部 TabBar (绝对贴底，绝不悬空)
+                // v1.0.21：横屏也不隐藏了。之前横屏自动隐藏，进取景页强制横屏
+                // 后底栏直接没了，只能点返回回控制页；用户要的是“底栏依旧存在，
+                // 只有画面横过来”。底栏仍在 VStack 流内，页面内容不会被盖住。
+                pureWhiteBlueTabBar(bottomInset: bottomSafeArea)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(
@@ -119,5 +119,8 @@ public struct RootTabView: View {
         .shadow(color: Color.black.opacity(0.14), radius: 12, x: 0, y: 4)
         .padding(.horizontal, 16)
         .padding(.bottom, bottomInset + 10)
+        // v1.0.21：横屏时底栏收窄居中（宽屏上三个键拉满屏看着太散）。
+        // 竖屏可用宽 358pt < 420，不受影响；横屏 844pt 时封顶 420pt。
+        .frame(maxWidth: 420)
     }
 }
