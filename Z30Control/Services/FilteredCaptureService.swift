@@ -15,7 +15,7 @@
 //  用拍前快照做差集认新照片；然后 GetObject 下全分辨率原图。
 //  渲染：复用取景预览同一套烘焙（LivePreviewRenderer.applyPreview——
 //  1D LUT 烘 32³ CIColorCube + 饱和度），不抄一份数学；全分辨率，
-//  只在最后做一次高质量 JPEG 编码（0.92）。
+//  只在最后做一次最高质量 JPEG 编码（1.0）。
 //  保存：走图库批量保存同一条存相册通道（MediaSyncService）。
 //  反馈：存好 / 哪步失败了都由调用方给轻提示；不管成败都不动卡里原片，
 //  不卡快门、不冻取景（下载渲染全在后台串行队列上；USB 下原图那一下
@@ -256,7 +256,7 @@ public final class FilteredCaptureService {
         // 复用预览的烘焙函数（cubeData + 饱和度），不抄一份数学；
         // 全分辨率渲染，不缩小。
         guard let rendered = LivePreviewRenderer.shared.applyPreview(to: image, preset: req.preset),
-              let jpeg = rendered.jpegData(compressionQuality: 0.92) else {
+              let jpeg = rendered.jpegData(compressionQuality: 1.0) else {
             finishActive(outcome: .failed(.renderFailed))
             return
         }

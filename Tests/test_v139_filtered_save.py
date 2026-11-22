@@ -17,7 +17,7 @@
    USB 和 Wi-Fi 都要通。
 3. 渲染：复用取景预览同一套烘焙（LivePreviewRenderer.applyPreview——
    1D LUT 烘 32³ CIColorCube + 饱和度），不抄一份数学；全分辨率，
-   只在最后做一次高质量 JPEG 编码（0.92）。
+   只在最后做一次最高质量 JPEG 编码（1.0）。
 4. 保存：走图库批量保存同一条存相册通道（MediaSyncService）。
    NSPhotoLibraryAddUsageDescription 权限键在 Info.plist 里。
 5. 反馈：存好 / 哪步失败了都给轻提示；不管成败都不动卡里原片。
@@ -32,7 +32,7 @@
 4. 渲染复用预览的烘焙函数，不抄一份；照片全分辨率、只编一次 JPEG。
 5. 保存走系统相册通道；失败有提示；不动卡里原片（无删除代码）。
 6. 下载渲染在后台队列，不冻取景；USB 下原图前后停/恢复取景。
-7. 版本 1.0.39 / build 40 两处一致；iOS 14 护栏。
+7. 版本 1.0.40 / build 41 两处一致；iOS 14 护栏。
 """
 
 import os
@@ -109,8 +109,8 @@ check("服务里没有自己抄一份 cube 数学（不建 CIFilter、不算 cub
       and "cubeValue" not in SERVICE
       and "32 * 32 * 32" not in SERVICE
       and "cubeData(" not in SERVICE)
-check("只做一次高质量 JPEG 编码（0.92）",
-      SERVICE.count("jpegData(compressionQuality: 0.92)") == 1)
+check("只做一次最高质量 JPEG 编码（1.0）",
+      SERVICE.count("jpegData(compressionQuality: 1.0)") == 1)
 check("照片全分辨率，不缩小（无 resize/降采样）",
       "resize" not in SERVICE.lower()
       and "downsampl" not in SERVICE.lower()
@@ -149,9 +149,9 @@ check("多拍排队：一次只跑一个请求，按快门顺序排队",
       and "active == nil" in SERVICE)
 
 # ---------------------------------------------------------------- 6. 版本 + iOS 14 护栏
-check("版本 1.0.39 / build 40 两处一致",
-      "MARKETING_VERSION: 1.0.39" in YML and "CURRENT_PROJECT_VERSION: 40" in YML and
-      "<string>1.0.39</string>" in PLIST and "<string>40</string>" in PLIST)
+check("版本 1.0.40 / build 41 两处一致",
+      "MARKETING_VERSION: 1.0.40" in YML and "CURRENT_PROJECT_VERSION: 41" in YML and
+      "<string>1.0.40</string>" in PLIST and "<string>41</string>" in PLIST)
 for banned in ["onTapGesture", "Button(role:", ".tint(", ".background(_:in:",
                 "ultraThinMaterial", ".coordinateSpace(.named"]:
     check("新服务无 iOS 15+ API：%s" % banned, banned not in SERVICE)

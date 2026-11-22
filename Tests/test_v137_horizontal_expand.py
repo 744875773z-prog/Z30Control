@@ -18,7 +18,7 @@ expandedColumnTopPadding）随第二列一起删了——网格顶对齐，不�
 6. 选中态：选中的预设变蓝，它所在的组在竖条里标蓝。
 7. 文字仍顺时针转 90°；芯片仍是磨砂玻璃 + 白字；DISP 时竖条和网格
    一起藏起来。
-8. 版本 1.0.39 / build 40 两处一致；iOS 14 护栏。
+8. 版本 1.0.40 / build 41 两处一致；iOS 14 护栏。
 """
 
 import os
@@ -135,9 +135,9 @@ check("DISP 清屏时网格和竖条一起藏（都在 !isCleanScreen 块里）"
       < HUD.find("portraitBottomControlDeck"))
 
 # ---------------------------------------------------------------- 7. 版本 + iOS 14 护栏
-check("版本 1.0.39 / build 40 两处一致",
-      "MARKETING_VERSION: 1.0.39" in YML and "CURRENT_PROJECT_VERSION: 40" in YML and
-      "<string>1.0.39</string>" in PLIST and "<string>40</string>" in PLIST)
+check("版本 1.0.40 / build 41 两处一致",
+      "MARKETING_VERSION: 1.0.40" in YML and "CURRENT_PROJECT_VERSION: 41" in YML and
+      "<string>1.0.40</string>" in PLIST and "<string>41</string>" in PLIST)
 check("iOS 14 护栏：没有 iOS 15+ 才有的 API（新式 alert / Button(role:) / .tint / 闭包 overlay）",
       "Button(role:" not in VIEW and ".tint(" not in VIEW
       and ".background(_:in:)" not in VIEW)

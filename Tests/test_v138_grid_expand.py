@@ -30,7 +30,7 @@
 5. 点选 / 收起 / 换组 / 一次只展开一组 / 选中态两处标记 / 字转 90° /
    磨砂玻璃 / DISP 一起藏，都没变。
 6. 组名：“低饱和”在，旧长名不再是分组标题（注释里提旧名不算）。
-7. 版本 1.0.39 / build 40 两处一致；iOS 14 护栏。
+7. 版本 1.0.40 / build 41 两处一致；iOS 14 护栏。
 """
 
 import os
@@ -210,9 +210,9 @@ check("11 组标题仍在（改名没丢组）",
       len(re.findall(r'PictCtrlPresetGroup\(title: "', PRESETS)) == 11)
 
 # ---------------------------------------------------------------- 7. 版本 + iOS 14 护栏
-check("版本 1.0.39 / build 40 两处一致",
-      "MARKETING_VERSION: 1.0.39" in YML and "CURRENT_PROJECT_VERSION: 40" in YML and
-      "<string>1.0.39</string>" in PLIST and "<string>40</string>" in PLIST)
+check("版本 1.0.40 / build 41 两处一致",
+      "MARKETING_VERSION: 1.0.40" in YML and "CURRENT_PROJECT_VERSION: 41" in YML and
+      "<string>1.0.40</string>" in PLIST and "<string>41</string>" in PLIST)
 check("iOS 14 护栏：没有 iOS 15+ 才有的 API（新式 alert / Button(role:) / .tint / 闭包 overlay）",
       "Button(role:" not in VIEW and ".tint(" not in VIEW
       and ".background(_:in:)" not in VIEW)
