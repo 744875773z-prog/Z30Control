@@ -1,6 +1,6 @@
-"""v1.0.31 回归：实时取景页顶部滤镜实时预览条。
+"""v1.0.31 回归：实时取景页滤镜实时预览（v1.0.32 改成最左侧竖条）。
 
-功能：取景页最上方一条横向可滚动的滤镜条，第一个「原图」（无滤镜，
+功能：取景页最左侧一条竖向可滚动的滤镜条，第一个「原图」（无滤镜，
 默认选中），后面是全部 121 套预设（按机身滤镜 tab 的 11 组顺序排，
 芯片上显示中文名）。点选后取景画面实时套上该滤镜的样子；点「原图」
 恢复原样。只做手机端预览，绝不影响相机、不写槽位、不改保存的照片。
@@ -21,7 +21,7 @@ cube 按预设缓存，不每帧重算；预览叠加在降噪+锐化之后；
 4. 预览路径不调用任何写槽代码、不碰保存的照片。
 5. 预览在增强之后、只消费最新帧、不经过 JPEG 重压。
 6. 机身滤镜 tab、图库删除修复、NP3 已移除的状态没动。
-7. 版本 1.0.31 / build 32 两处一致；iOS 14 护栏。
+7. 版本 1.0.32 / build 33 两处一致；iOS 14 护栏。
 """
 
 import base64
@@ -208,12 +208,12 @@ check("点「原图」清除预览（nil 经 flatMap 得到 nil）",
       "streamService.previewPreset = id.flatMap" in VIEW)
 check("离开取景页清掉预览选择",
       "streamService.previewPreset = nil" in VIEW)
-# 条在竖屏 HUD 顶部、底栏上面
+# v1.0.32：条从顶部横条改成最左侧竖条、仍在竖屏 HUD 里、底栏上面
 hud = VIEW.split("private var portraitProHUD", 1)[1]
-check("滤镜条在 portraitProHUD 里", "previewFilterStrip" in hud)
-check("滤镜条在底栏上面（先出现）",
-      hud.find("previewFilterStrip") < hud.find("portraitBottomControlDeck"))
-check("清屏时滤镜条藏起来", "if !isCleanScreen {\n                    previewFilterStrip" in VIEW)
+check("滤镜竖条在 portraitProHUD 里", "previewFilterRail" in hud)
+check("滤镜竖条在底栏上面（先出现）",
+      hud.find("previewFilterRail") < hud.find("portraitBottomControlDeck"))
+check("清屏时滤镜条藏起来", "if !isCleanScreen {\n                        previewFilterRail" in VIEW)
 check("滤镜条贴顶部安全区", "topSafeInset(geo)" in VIEW)
 check("选中芯片高亮（accentBlue 底）",
       "selected ? NikonTheme.accentBlue" in VIEW)
@@ -237,9 +237,9 @@ check("全仓 Swift 源码里仍无 NP3",
 # ---------------------------------------------------------------- 7. 版本 + iOS 14 护栏
 YML = read("project.yml")
 PLIST = read("Z30Control/Info.plist")
-check("版本 1.0.31 / build 32 两处一致",
-      "MARKETING_VERSION: 1.0.31" in YML and "CURRENT_PROJECT_VERSION: 32" in YML and
-      "<string>1.0.31</string>" in PLIST and "<string>32</string>" in PLIST)
+check("版本 1.0.32 / build 33 两处一致",
+      "MARKETING_VERSION: 1.0.32" in YML and "CURRENT_PROJECT_VERSION: 33" in YML and
+      "<string>1.0.32</string>" in PLIST and "<string>33</string>" in PLIST)
 check("部署目标还是 14.0", 'deploymentTarget: "14.0"' in YML)
 for rel, src in [
     ("LivePreviewRenderer.swift", RENDERER),
