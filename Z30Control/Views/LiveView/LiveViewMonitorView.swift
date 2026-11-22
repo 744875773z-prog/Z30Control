@@ -32,6 +32,8 @@ public struct LiveViewMonitorView: View {
     @State private var previewSubtitle = "成片已回传至手机"
     @State private var isCapturing = false
     @State private var showingWiredHelp = false
+    // v1.0.31：取景页顶部滤镜预览条选中的预设（nil = 原图，默认）。
+    @State private var selectedPreviewPresetID: String? = nil
     // v1.0.15：未连接空状态里的“连接 Wi-Fi 热点”入口，直接在本页弹出连接向导。
     @State private var showingConnectionWizard = false
     
@@ -135,6 +137,8 @@ public struct LiveViewMonitorView: View {
         .onDisappear {
             OrientationLock.unlockToPortrait()
             stopLiveViewForActiveTransport()
+            // v1.0.31：离开取景页就清掉预览选择，别让滤镜状态漏到别处。
+            streamService.previewPreset = nil
         }
         .onChange(of: connectionService.isConnected) { connected in
             // 已在取景页时才连上相机（例如从连接页切回来）：立即开始取景
@@ -403,6 +407,14 @@ public struct LiveViewMonitorView: View {
     private var portraitProHUD: some View {
         GeometryReader { geo in
             VStack(spacing: 0) {
+                // v1.0.31：顶部滤镜预览条——横向可滚动，第一个「原图」，
+                // 后面是全部 121 套预设。点中哪个，取景画面实时套上该滤镜
+                // 的样子，只改手机屏幕显示，不写相机。清屏时藏起来。
+                if !isCleanScreen {
+                    previewFilterStrip
+                        .padding(.top, topSafeInset(geo))
+                }
+
                 // v1.0.24：上面参数全删了（用户 2026-11-21 20:43 截图圈的
                 // 顶部整块：状态条 + 快门/光圈/ISO + 模式/白平衡/测光/±EV）。
                 // 顶部留空，画面干净；满屏/完整切换挪到底部工具组。
@@ -441,6 +453,62 @@ public struct LiveViewMonitorView: View {
             let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene
             return windowScene?.windows.first?.safeAreaInsets.bottom ?? 0
         }
+    }
+
+    // v1.0.31：顶部安全区（刘海/灵动岛），和 bottomSafeInset 同一个拿法。
+    private func topSafeInset(_ geo: GeometryProxy) -> CGFloat {
+        if #available(iOS 15, *) {
+            return geo.safeAreaInsets.top
+        } else {
+            let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene
+            return windowScene?.windows.first?.safeAreaInsets.top ?? 0
+        }
+    }
+
+    // MARK: - v1.0.31：取景页顶部滤镜预览条
+    /// 全部 121 套预设，按机身滤镜 tab 的 11 组顺序排平（组顺序不变，
+    /// 条里不分组，只按顺序排芯片）。
+    private var allPreviewPresets: [PictCtrlPreset] {
+        PictCtrlPresets.groups.flatMap { $0.presets }
+    }
+
+    /// 横向可滚动的滤镜条：第一个「原图」（无滤镜，默认选中），后面是
+    /// 全部 121 套预设，芯片上只写中文名。点中哪个就高亮，取景画面
+    /// 实时套上该滤镜的样子；点「原图」恢复原样。只改手机屏幕显示，
+    /// 不写相机、不动原图。
+    private var previewFilterStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                previewChip(id: nil, title: "原图")
+                ForEach(allPreviewPresets) { preset in
+                    previewChip(id: preset.id, title: preset.displayName)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+        }
+        .background(Color.black.opacity(0.55))
+    }
+
+    private func previewChip(id: String?, title: String) -> some View {
+        let selected = selectedPreviewPresetID == id
+        return Button(action: {
+            NikonTheme.triggerHaptic(style: .light)
+            selectedPreviewPresetID = id
+            // id 为 nil（原图）时 flatMap 得到 nil，预览清除。
+            streamService.previewPreset = id.flatMap { pid in
+                allPreviewPresets.first(where: { $0.id == pid })
+            }
+        }) {
+            Text(title)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(selected ? NikonTheme.accentBlue : Color.white.opacity(0.15))
+                .cornerRadius(14)
+        }
+        .buttonStyle(PlainButtonStyle())
     }
 
     // MARK: - 横屏专业相机两翼透明 OSD 布局 (对齐网页版，画面零遮挡)

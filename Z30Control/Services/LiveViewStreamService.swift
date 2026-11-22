@@ -26,6 +26,9 @@ public final class LiveViewStreamService: ObservableObject {
     // v1.0.20：取景帧轻量增强（降噪+锐化，默认开，取景页可关）。
     // 只做显示层增强，不改相机设置、不动原图。
     @Published public var isEnhanceEnabled: Bool = true
+    // v1.0.31：取景页选中的预览滤镜（nil = 原图）。只改显示的帧，
+    // 不写相机、不动原图、不碰保存的照片。
+    @Published public var previewPreset: PictCtrlPreset? = nil
     // 当前取景帧的实际像素尺寸（相机发来的那帧多大，见 LiveViewParser）。
     @Published public var currentFrameSize: CGSize = .zero
     @Published public var isFocusPeakingEnabled: Bool = false
@@ -49,6 +52,30 @@ public final class LiveViewStreamService: ObservableObject {
     }
     
     public func updateFrame(_ frame: LiveViewFrame) {
+        // v1.0.31：取景滤镜实时预览。顺序：先降噪+锐化（现有的增强），
+        // 再套预览 cube——预览叠加在增强之后。只改显示的这帧，不写相机、
+        // 不动原图、不经过 JPEG 重压（结果存在 enhancedImage 里）。
+        // 和增强分支一样：后台串行跑，忙时丢帧保流畅，只消费最新帧。
+        if let preset = previewPreset, let rawImage = frame.image {
+            guard !frameFiltering else { return } // 忙：丢掉这帧，下一帧再滤
+            frameFiltering = true
+            let enhance = isEnhanceEnabled
+            frameFilterQueue.async { [weak self] in
+                guard let self = self else { return }
+                var img = rawImage
+                if enhance { img = Self.enhanceLiveViewImage(img) }
+                if let previewed = LivePreviewRenderer.shared.applyPreview(to: img, preset: preset) {
+                    img = previewed
+                }
+                var out = frame
+                out.enhancedImage = img
+                DispatchQueue.main.async {
+                    self.frameFiltering = false
+                    self.publishFrame(out)
+                }
+            }
+            return
+        }
         // v1.0.6：选了滤镜，取景画面要实时变。之前 activeFilter/isLUTEnabled 只改了状态，
         // 没有任何地方把 LUT 画到帧上，所以选滤镜屏幕毫无变化。
         if isLUTEnabled, let filter = activeFilter, let rawImage = frame.image {
