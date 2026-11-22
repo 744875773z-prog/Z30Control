@@ -16,6 +16,8 @@ public struct PictCtrlView: View {
     @State private var pendingPreset: PictCtrlPreset? = nil
     @State private var activeAlert: PictCtrlAlert? = nil
     @State private var showBackups = false
+    // 分组折叠：默认只展开第一组（通用影调），其余组点开再看。
+    @State private var expandedGroups: Set<String> = ["通用影调"]
 
     private enum PictCtrlAlert: Identifiable {
         case writeConfirm
@@ -174,42 +176,77 @@ public struct PictCtrlView: View {
 
     private var presetSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("内置滤镜（8 套）")
+            Text("内置滤镜（121 套）")
                 .font(.system(size: 14, weight: .bold))
                 .foregroundColor(NikonTheme.textPrimary)
             Text("写进相机后，不连手机、直接用这个槽拍照，直出就带风格。1D 曲线只改明暗影调，改不了色相。")
                 .font(.system(size: 12))
                 .foregroundColor(NikonTheme.textTertiary)
-            ForEach(PictCtrlPresets.all) { preset in
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(preset.displayName)
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundColor(NikonTheme.textPrimary)
-                        Text(preset.desc)
-                            .font(.system(size: 12))
-                            .foregroundColor(NikonTheme.textSecondary)
-                    }
-                    Spacer()
-                    Button("写入") {
-                        pendingPreset = preset
-                        activeAlert = .writeConfirm
-                    }
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-                    .background(canWrite ? NikonTheme.accentBlue : Color.gray)
-                    .cornerRadius(9)
-                    .disabled(!canWrite)
-                }
-                .padding(.vertical, 4)
+            ForEach(PictCtrlPresets.groups) { group in
+                presetGroup(group)
             }
         }
         .padding(16)
         .background(NikonTheme.surfaceCard)
         .cornerRadius(18)
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(NikonTheme.borderDim, lineWidth: 1.5))
+    }
+
+    // 一个可折叠的分组：组标题 + 展开/收起，点标题切换（iOS 14 只有 Button + 条件渲染）。
+    private func presetGroup(_ group: PictCtrlPresetGroup) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: {
+                if expandedGroups.contains(group.title) {
+                    expandedGroups.remove(group.title)
+                } else {
+                    expandedGroups.insert(group.title)
+                }
+            }) {
+                HStack {
+                    Text("\(group.title)（\(group.presets.count)）")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundColor(NikonTheme.textPrimary)
+                    Spacer()
+                    Image(systemName: expandedGroups.contains(group.title) ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(NikonTheme.textTertiary)
+                }
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(PlainButtonStyle())
+            if expandedGroups.contains(group.title) {
+                ForEach(group.presets) { preset in
+                    presetRow(preset)
+                }
+            }
+        }
+    }
+
+    private func presetRow(_ preset: PictCtrlPreset) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(preset.displayName)
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundColor(NikonTheme.textPrimary)
+                Text(preset.desc)
+                    .font(.system(size: 12))
+                    .foregroundColor(NikonTheme.textSecondary)
+            }
+            Spacer()
+            Button("写入") {
+                pendingPreset = preset
+                activeAlert = .writeConfirm
+            }
+            .font(.system(size: 13, weight: .bold))
+            .foregroundColor(.white)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+            .background(canWrite ? NikonTheme.accentBlue : Color.gray)
+            .cornerRadius(9)
+            .disabled(!canWrite)
+        }
+        .padding(.vertical, 4)
     }
 
     private var canWrite: Bool {

@@ -19,8 +19,8 @@
    NP3PictureControl 四个文件 + test_v127_np3.py 都不在了；Swift 源码里
    再无 "NP3" 字样；详情页的"滤镜（导入 .NP3 配方）"入口没了；
    saveFilteredImageData 没了。
-4. 机身滤镜不动：PictCtrl 四件套还在，8 套内置预设还在，0x90CE 仍无处可寻。
-5. 版本 1.0.29 / build 30 两处一致；部署目标还是 14.0；改动文件无 iOS 15+ API。
+4. 机身滤镜不动：PictCtrl 四件套还在，121 套内置预设还在，0x90CE 仍无处可寻。
+5. 版本 1.0.30 / build 31 两处一致；部署目标还是 14.0；改动文件无 iOS 15+ API。
 """
 
 import os
@@ -131,7 +131,7 @@ for rel in ("Z30Control/Models/PictCtrlPayload.swift",
     check(f"机身滤镜文件还在：{os.path.basename(rel)}",
           os.path.exists(os.path.join(ROOT, rel)))
 PRESETS = read("Z30Control/Models/PictCtrlPresets.swift")
-check("8 套内置预设还在", PRESETS.count('payloadBase64: "') == 8)
+check("121 套内置预设还在", PRESETS.count('payloadBase64: "') == 121)
 check("机身滤镜 tab 还在取景和图库之间",
       "case pictCtrl = 2" in read("Z30Control/App/RootTabView.swift")
       and "case gallery = 3" in read("Z30Control/App/RootTabView.swift"))
@@ -145,11 +145,11 @@ check("仍无 0x90CE 删槽代码（注释除外）",
 print("== 6. 版本 + iOS 14 护栏 ==")
 yml = read("project.yml")
 plist = read("Z30Control/Info.plist")
-check("版本 1.0.29 / build 30 两处一致",
-      "MARKETING_VERSION: 1.0.29" in yml
-      and "CURRENT_PROJECT_VERSION: 30" in yml
-      and "<string>1.0.29</string>" in plist
-      and "<string>30</string>" in plist)
+check("版本 1.0.30 / build 31 两处一致",
+      "MARKETING_VERSION: 1.0.30" in yml
+      and "CURRENT_PROJECT_VERSION: 31" in yml
+      and "<string>1.0.30</string>" in plist
+      and "<string>31</string>" in plist)
 check("部署目标还是 14.0", 'deploymentTarget: "14.0"' in yml)
 check("project.yml 没有 info: 块（忽略注释行）",
       not any(re.match(r"\s*info\s*:", ln) for ln in yml.splitlines()

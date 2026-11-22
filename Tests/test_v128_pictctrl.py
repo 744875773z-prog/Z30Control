@@ -6,14 +6,14 @@
    Swift 源码里的模板常量（版本字节、标志位、参数步长）逐项核对。
 2. 参数编码：sharp 9.0 ↔ 0x24、clarity −5.0 ↔ 0xEC、saturation 3.0 ↔ 0x0C、
    quick_sharp −2 ↔ 0xFE（1dlut 真机回读值）。
-3. 8 套内置预设：Swift 里嵌的 base64 必须和 1dlut builtin_presets.json
+3. 121 套内置预设（v1.0.30 起全量）：Swift 里嵌的 base64 必须和 1dlut builtin_presets.json
    原文一字不差；每套解出来 614 字节、版本 02 00、名字栏 = cam 名、
    LUT 256 点大端 u16、值域 0..32767、单调。
 4. 槽位号：C1–C9 = 0x00C9–0x00D1。
 5. 红线：App 里没有任何 0x90CE（删槽指令）的代码调用——只允许出现在注释里；
    没有 DelCstPicCtrl / deletePictCtrl 之类的删除入口。
 6. iOS 14 护栏：新文件里没有 iOS 15+ API。
-7. 版本 1.0.29 / build 30 两处一致；控制页有真实可达的机身滤镜入口；
+7. 版本 1.0.30 / build 31 两处一致（v1.0.30 起由 test_v130 再验一遍）；控制页有真实可达的机身滤镜入口；
    v1.0.29 起 NP3 图库滤镜已移除（文件不在，见 test_v129）。
 """
 
@@ -146,16 +146,16 @@ for i in range(1, 10):
 # ---------------------------------------------------------------- 3. 内置预设
 PRESETS = read("Z30Control/Models/PictCtrlPresets.swift")
 b64s = re.findall(r'payloadBase64: "([A-Za-z0-9+/=]+)"', PRESETS)
-check("内置预设正好 8 套", len(b64s) == 8, f"找到 {len(b64s)} 套")
+check("内置预设正好 121 套（v1.0.30 起全量）", len(b64s) == 121, f"找到 {len(b64s)} 套")
 check("预设名全是 ASCII（进载荷）",
       all(re.search(r'cameraName: "([ -~]+)"', PRESETS) for _ in [0]) and
-      len(re.findall(r'cameraName: "([ -~]+)"', PRESETS)) == 8)
+      len(re.findall(r'cameraName: "([ -~]+)"', PRESETS)) == 121)
 
 if DLUT is not None:
     data = json.load(open(os.path.join(DLUT, "android/app/src/main/assets/builtin_presets.json")))
     by_id = {p["id"]: p for p in data["presets"]}
     swift_ids = re.findall(r'id: "([a-z0-9\-]+)"', PRESETS)
-    check("8 套 id 都在 1dlut 预设库里", all(i in by_id for i in swift_ids),
+    check("121 套 id 都在 1dlut 预设库里", all(i in by_id for i in swift_ids),
           f"ids={swift_ids}")
     for pid, b64 in zip(swift_ids, b64s):
         raw = base64.b64decode(b64)
@@ -233,9 +233,9 @@ for rel in NEW_FILES:
 # ---------------------------------------------------------------- 8. 版本 + 入口 + NP3 不动
 YML = read("project.yml")
 PLIST = read("Z30Control/Info.plist")
-check("版本 1.0.29 / build 30 两处一致",
-      "MARKETING_VERSION: 1.0.29" in YML and "CURRENT_PROJECT_VERSION: 30" in YML and
-      "<string>1.0.29</string>" in PLIST and "<string>30</string>" in PLIST)
+check("版本 1.0.30 / build 31 两处一致",
+      "MARKETING_VERSION: 1.0.30" in YML and "CURRENT_PROJECT_VERSION: 31" in YML and
+      "<string>1.0.30</string>" in PLIST and "<string>31</string>" in PLIST)
 check("project.yml 没有 info: 块（忽略注释行）",
       not any(re.match(r"\s*info\s*:", ln) for ln in YML.splitlines()
               if not ln.strip().startswith("#")))
