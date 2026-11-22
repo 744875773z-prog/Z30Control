@@ -427,13 +427,13 @@ public struct ControlDashboardView: View {
                             .cornerRadius(8)
                     }
                     
-                    // 3. USB 模式设为 MTP/PTP 或 iPhone
+                    // 3. USB 模式设为 MTP/PTP（iPhone 模式是 NX MobileAir，连不上本 App）
                     VStack(alignment: .leading, spacing: 6) {
                         Text("3. 相机【USB 数据连接】模式")
                             .font(.system(size: 15, weight: .bold))
                             .foregroundColor(NikonTheme.textPrimary)
                         
-                        Text("按机身 MENU 键 ➔【设置菜单】或【网络菜单】➔ 找到【USB 数据连接】➔ 切换为【MTP/PTP】或【iPhone】。连通后相机屏幕上方会显示 [-PC-] 联机标识。")
+                        Text("按机身 MENU 键 ➔【设置菜单】或【网络菜单】➔ 找到【USB 数据连接】➔ 设为【MTP/PTP】。注意：【iPhone】模式是 NX MobileAir 专用的，连不上本 App，不要选。连通后相机屏幕上方会显示 [-PC-] 联机标识。")
                             .font(.system(size: 12))
                             .foregroundColor(NikonTheme.textSecondary)
                             .padding(10)

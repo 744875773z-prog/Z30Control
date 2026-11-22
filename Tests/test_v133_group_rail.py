@@ -22,7 +22,7 @@
 6. 字仍顺时针转 90°（跟框一个方向）；芯片窄而高（宽 30pt、高随字数走）。
 7. 点选仍能触发预览（点预设立即应用、点原图清除）；预览只改显示，
    不写相机。
-8. 版本 1.0.34 / build 35 两处一致；iOS 14 护栏。
+8. 版本 1.0.35 / build 36 两处一致；iOS 14 护栏。
 """
 
 import os
@@ -162,9 +162,9 @@ for needle, label in [
 # ---------------------------------------------------------------- 8. 版本 + iOS 14 护栏
 YML = read("project.yml")
 PLIST = read("Z30Control/Info.plist")
-check("版本 1.0.34 / build 35 两处一致",
-      "MARKETING_VERSION: 1.0.34" in YML and "CURRENT_PROJECT_VERSION: 35" in YML and
-      "<string>1.0.34</string>" in PLIST and "<string>35</string>" in PLIST)
+check("版本 1.0.35 / build 36 两处一致",
+      "MARKETING_VERSION: 1.0.35" in YML and "CURRENT_PROJECT_VERSION: 36" in YML and
+      "<string>1.0.35</string>" in PLIST and "<string>36</string>" in PLIST)
 check("部署目标还是 14.0", 'deploymentTarget: "14.0"' in YML)
 for pat, label in [
     (r"onTapGesture\(.*location", "onTapGesture 带 location（iOS 17）"),

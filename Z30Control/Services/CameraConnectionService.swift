@@ -60,7 +60,7 @@ public final class CameraConnectionService: ObservableObject, PtpIpClientDelegat
         self.transportMode = mode
         switch mode {
         case .usbC:
-            // USB-C 直连线缆模式 (尼康设置菜单 -> USB 数据连接 -> [iPhone] 时，通常为 192.168.1.1)
+            // USB-C 直连线缆模式（相机【USB 数据连接】须设为 MTP/PTP；iPhone 模式是 NX MobileAir，连不上本 App）
             self.targetIP = "192.168.1.1"
             self.statusMessage = "已设为【USB-C 有线】模式 (192.168.1.1)"
         case .cameraAP:
