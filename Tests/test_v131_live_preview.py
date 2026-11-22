@@ -1,9 +1,10 @@
-"""v1.0.31 回归：实时取景页滤镜实时预览（v1.0.32 改成最左侧竖条）。
+"""v1.0.31 回归：实时取景页滤镜实时预览（v1.0.32 最左侧竖条；
+v1.0.33 两级钻取 + 字顺时针转 90°）。
 
-功能：取景页最左侧一条竖向可滚动的滤镜条，第一个「原图」（无滤镜，
-默认选中），后面是全部 121 套预设（按机身滤镜 tab 的 11 组顺序排，
-芯片上显示中文名）。点选后取景画面实时套上该滤镜的样子；点「原图」
-恢复原样。只做手机端预览，绝不影响相机、不写槽位、不改保存的照片。
+功能：取景页最左侧一条竖向可滚动的滤镜条，第一级是「原图」+ 11 个
+组名，点组进第二级看该组预设（121 套齐全，按机身滤镜 tab 的 11 组
+顺序），点选后取景画面实时套上该滤镜的样子；点「原图」恢复原样。
+只做手机端预览，绝不影响相机、不写槽位、不改保存的照片。
 
 渲染：预设 614 字节载荷里 +0x066 的 256 点 1D LUT（u16 大端，
 0..32767）烘成 32³ CIColorCube——1D 曲线逐通道独立，cube 在
@@ -17,11 +18,12 @@ cube 按预设缓存，不每帧重算；预览叠加在降噪+锐化之后；
    中性预设的 cube 是单位阵（黑点 stays 黑、白点 stays 白）；
    全部 121 套逐通道独立；32³ 尺寸 = 32*32*32*4 个 float。
 2. 饱和度映射：系数 = 1 + 值×0.1，全套在 0.7..1.3 内。
-3. 滤镜条里 121 套齐全（按 11 组顺序排平）、「原图」能清除预览。
+3. 滤镜条两级钻取：第一级 12 项（原图 + 11 组），第二级是该组预设，
+   「原图」能清除预览。
 4. 预览路径不调用任何写槽代码、不碰保存的照片。
 5. 预览在增强之后、只消费最新帧、不经过 JPEG 重压。
 6. 机身滤镜 tab、图库删除修复、NP3 已移除的状态没动。
-7. 版本 1.0.32 / build 33 两处一致；iOS 14 护栏。
+7. 版本 1.0.33 / build 34 两处一致；iOS 14 护栏。
 """
 
 import base64
@@ -198,8 +200,13 @@ for needle, label in [
 ]:
     check("渲染器文件里没有：" + label, needle not in RENDERER)
 
-# ---------------------------------------------------------------- 5. 取景页顶部滤镜条
-check("滤镜条是横向 ScrollView", "ScrollView(.horizontal" in VIEW)
+# ---------------------------------------------------------------- 5. 取景页左侧两级滤镜条
+# v1.0.33：第一级「原图」+ 11 组名，点组进第二级；字顺时针转 90°。
+# （横向 ScrollView 在文件别处还有一个，是参数选择器，不是滤镜条。）
+rail_seg = VIEW[VIEW.find("private var previewFilterRail"):
+                VIEW.find("// MARK: - 横屏专业相机两翼透明 OSD 布局")]
+check("滤镜条是竖向 ScrollView", "ScrollView(.vertical" in rail_seg)
+check("滤镜竖条里没有横向 ScrollView", "ScrollView(.horizontal" not in rail_seg)
 check("滤镜条从 11 组排平（flatMap 保持组顺序）",
       "PictCtrlPresets.groups.flatMap" in VIEW)
 check("滤镜条第一个芯片是「原图」", 'previewChip(id: nil, title: "原图")' in VIEW)
@@ -237,9 +244,9 @@ check("全仓 Swift 源码里仍无 NP3",
 # ---------------------------------------------------------------- 7. 版本 + iOS 14 护栏
 YML = read("project.yml")
 PLIST = read("Z30Control/Info.plist")
-check("版本 1.0.32 / build 33 两处一致",
-      "MARKETING_VERSION: 1.0.32" in YML and "CURRENT_PROJECT_VERSION: 33" in YML and
-      "<string>1.0.32</string>" in PLIST and "<string>33</string>" in PLIST)
+check("版本 1.0.33 / build 34 两处一致",
+      "MARKETING_VERSION: 1.0.33" in YML and "CURRENT_PROJECT_VERSION: 34" in YML and
+      "<string>1.0.33</string>" in PLIST and "<string>34</string>" in PLIST)
 check("部署目标还是 14.0", 'deploymentTarget: "14.0"' in YML)
 for rel, src in [
     ("LivePreviewRenderer.swift", RENDERER),

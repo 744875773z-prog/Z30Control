@@ -36,6 +36,10 @@ public struct LiveViewMonitorView: View {
     // v1.0.31 是顶部横条，用户 2026-11-22 19:14 截图反馈：横着拍时顶条
     // 挡画面，挪到最左边竖着放，11 组照旧，中文横着写，白芯片、不要黑底条。
     @State private var selectedPreviewPresetID: String? = nil
+    // v1.0.33：竖条两级钻取当前所在的组（nil = 第一级：原图 + 11 组名）。
+    // 用户 2026-11-22 19:28 纠正：分组要点开才进，不要一屏全摊开占屏；
+    // 字也要顺时针转 90°（跟框一个方向），横握手机时才横着读。
+    @State private var railSelectedGroupTitle: String? = nil
     // v1.0.15：未连接空状态里的“连接 Wi-Fi 热点”入口，直接在本页弹出连接向导。
     @State private var showingConnectionWizard = false
     
@@ -409,10 +413,11 @@ public struct LiveViewMonitorView: View {
     private var portraitProHUD: some View {
         GeometryReader { geo in
             VStack(spacing: 0) {
-                // v1.0.32：滤镜条从顶部挪到最左边竖着放——用户横着拿手机拍，
-                // 顶部的横条挡画面、还得横着滑。竖条贴左边缘，从刘海下面
-                // 一直到底栏上面；11 组照旧（组名 + 组里芯片），中文横着写
-                // 不转；白色小方块芯片、容器全透明、不要黑底条。清屏时藏起来。
+                // v1.0.33：滤镜竖条贴左边缘，从刘海下面一直到底栏上面。
+                // v1.0.32 是一屏全展开 121 套、中文横着写；用户 2026-11-22
+                // 19:28 纠正：分组要点开才进（两级钻取，占屏小），字也要
+                // 顺时针转 90°（跟框一个方向），横握手机时才横着读。
+                // 白色小方块芯片、容器全透明、不要黑底条。清屏时藏起来。
                 // 底栏挪出 HStack、单独放最下面一行占满宽，快门还在屏幕正中央。
                 HStack(alignment: .top, spacing: 0) {
                     if !isCleanScreen {
@@ -473,61 +478,90 @@ public struct LiveViewMonitorView: View {
         }
     }
 
-    // MARK: - v1.0.32：取景页左侧竖向滤镜预览条
-    /// 全部 121 套预设，按机身滤镜 tab 的 11 组顺序排平（组顺序不变），
+    // MARK: - v1.0.33：取景页左侧竖向滤镜预览条（两级钻取）
+    /// 全部 121 套预设，按机身滤镜 tab 的 11 组顺序排（组顺序不变），
     /// 点芯片时按 id 反查预设用；竖条里显示时按组分（见 previewFilterRail）。
     private var allPreviewPresets: [PictCtrlPreset] {
         PictCtrlPresets.groups.flatMap { $0.presets }
     }
 
-    /// 11 组按机身滤镜 tab 的顺序排，组里芯片按组内顺序；第一个是「原图」。
-    /// 容器全透明、没有黑底条；芯片是白色小方块、黑字，选中变蓝底白字；
-    /// 组名是小白字（带阴影，压在画面上能看清），中文一律横着写、不旋转。
-    /// 点中哪个，取景画面实时套上该滤镜的样子；点「原图」恢复原样。
-    /// 只改手机屏幕显示，不写相机、不动原图。
+    /// 当前选中的预设所属的组（没选或选了原图时为 nil）；第一级用它标组。
+    private var selectedPresetGroupTitle: String? {
+        guard let pid = selectedPreviewPresetID else { return nil }
+        return PictCtrlPresets.groups.first(where: { group in
+            group.presets.contains(where: { $0.id == pid })
+        })?.title
+    }
+
+    /// 第一级只显示「原图」+ 11 个组名，点一个组就进第二级、只显示该组预设；
+    /// 第二级顶部「← 分组」返回组列表。点预设立即应用预览，选中态两级都有
+    /// 标记（第二级里预设芯片变蓝，第一级里它所在的组名也变蓝）。
+    /// 容器全透明、没有黑底条；点中哪个，取景画面实时套上该滤镜的样子；
+    /// 点「原图」恢复原样。只改手机屏幕显示，不写相机、不动原图。
     private var previewFilterRail: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 6) {
-                previewChip(id: nil, title: "原图")
-                ForEach(PictCtrlPresets.groups) { group in
-                    Text(group.title)
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(.white)
-                        .shadow(color: .black, radius: 2)
-                        .padding(.top, 8)
+                if let title = railSelectedGroupTitle,
+                   let group = PictCtrlPresets.groups.first(where: { $0.title == title }) {
+                    // 第二级：返回 + 该组预设
+                    railChip(title: "← 分组", selected: false) {
+                        NikonTheme.triggerHaptic(style: .light)
+                        railSelectedGroupTitle = nil
+                    }
                     ForEach(group.presets) { preset in
                         previewChip(id: preset.id, title: preset.displayName)
+                    }
+                } else {
+                    // 第一级：原图 + 11 个组名
+                    previewChip(id: nil, title: "原图")
+                    ForEach(PictCtrlPresets.groups) { group in
+                        railChip(title: group.title, selected: selectedPresetGroupTitle == group.title) {
+                            NikonTheme.triggerHaptic(style: .light)
+                            railSelectedGroupTitle = group.title
+                        }
                     }
                 }
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 4)
         }
-        .frame(width: 104)
+        .frame(width: 42)
+    }
+
+    /// 竖条芯片：白底白框、黑字，选中蓝底白字。字顺时针转 90°（跟取景框
+    /// 同一个方向），横握手机时横着读。芯片窄而高：宽 30pt，高随字数走。
+    private func railChip(title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: .bold))
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .rotationEffect(.degrees(90))
+                .foregroundColor(selected ? .white : .black)
+                .frame(width: 30, height: railChipHeight(for: title))
+                .background(selected ? NikonTheme.accentBlue : Color.white)
+                .cornerRadius(6)
+                .shadow(color: .black.opacity(0.25), radius: 2, x: 0, y: 1)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+
+    /// 芯片高 = 字数 × 13pt + 16pt 上下留白（12pt 字，汉字宽 12pt，留点余量）。
+    /// 转 90° 后字的横向长度变成芯片的高度，估小了字会顶出白框。
+    private func railChipHeight(for title: String) -> CGFloat {
+        CGFloat(title.count) * 13 + 16
     }
 
     private func previewChip(id: String?, title: String) -> some View {
         let selected = selectedPreviewPresetID == id
-        return Button(action: {
+        return railChip(title: title, selected: selected) {
             NikonTheme.triggerHaptic(style: .light)
             selectedPreviewPresetID = id
             // id 为 nil（原图）时 flatMap 得到 nil，预览清除。
             streamService.previewPreset = id.flatMap { pid in
                 allPreviewPresets.first(where: { $0.id == pid })
             }
-        }) {
-            Text(title)
-                .font(.system(size: 12, weight: .bold))
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
-                .foregroundColor(selected ? .white : .black)
-                .frame(width: 92)
-                .padding(.vertical, 6)
-                .background(selected ? NikonTheme.accentBlue : Color.white)
-                .cornerRadius(6)
-                .shadow(color: .black.opacity(0.25), radius: 2, x: 0, y: 1)
         }
-        .buttonStyle(PlainButtonStyle())
     }
 
     // MARK: - 横屏专业相机两翼透明 OSD 布局 (对齐网页版，画面零遮挡)

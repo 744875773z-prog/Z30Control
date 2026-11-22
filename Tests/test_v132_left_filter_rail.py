@@ -1,22 +1,23 @@
-"""v1.0.32 回归：取景页滤镜条从顶部横条改成最左边竖条。
+"""v1.0.33 回归：取景页左侧滤镜条改成两级钻取 + 字转 90°。
 
-用户 2026-11-22 19:14 对着 v1.0.31 截图反馈：横着拍，顶部黑底横条
-挡画面；改成：竖条贴取景页最左边，11 组照旧（组名 + 组里芯片），
-中文横着写不转，白色小方块芯片，不要黑底条。
+用户 2026-11-22 19:28 对着 v1.0.32 纠正：分组要点开才进，不要一屏
+全摊开占屏；字也要顺时针转 90°（跟框一个方向），横握手机时才横着读。
+上次把“汉字横着写”理解成竖屏坐标里的横排，错了，这次按转 90° 改。
 
 检查点：
-1. 顶部横条彻底没了（previewFilterStrip 定义、横向 ScrollView、黑底条
-   都不在滤镜条里）；竖条是 ScrollView(.vertical)。
-2. 竖条在取景页最左边：portraitProHUD 里 HStack 第一位就是它，
-   底栏单独在下面一行占满宽（快门仍在屏幕正中央，v1.0.24 的要求）。
-3. 分组还在：11 组、121 套，组名 + 组里芯片，组顺序不变；「原图」仍是第一个。
-4. 芯片是白色小方块：白底黑字、圆角 6、固定宽，选中变蓝底白字；
+1. 顶部横条彻底没了；竖条是 ScrollView(.vertical)，仍在取景页最左边。
+2. 竖条在 portraitProHUD 里 HStack 第一位（最左边）；底栏单独在下面
+   一行占满宽（快门仍在屏幕正中央，v1.0.24 的要求）；清屏时藏起来。
+3. 分组还在：11 组、121 套，组顺序不变；「原图」仍是第一级第一个。
+4. 芯片是白色窄条：白底黑字、圆角 6、宽 30pt、选中变蓝底白字；
    容器全透明（竖条那段里没有任何 .background 黑底）；
-   中文横着写（竖条 + 芯片那段里没有 rotationEffect）。
-5. 最长中文名 12 个字，两行能放下（芯片 92pt、12pt 字，一行约 7 个字）。
+   中文顺时针转 90°（railChip 里有 rotationEffect(.degrees(90))，
+   且没有横排的 .lineLimit(2)）。
+5. 最长中文名 13 个字，芯片高按字数算（13pt/字 + 16pt 留白），
+   转 90° 后字不会顶出白框。
 6. 点选行为没变：点芯片实时预览、点「原图」清除、离页清掉；
    预览只改显示，不写相机（渲染器/取景流里仍无写槽代码）。
-7. 版本 1.0.32 / build 33 两处一致；iOS 14 护栏。
+7. 版本 1.0.33 / build 34 两处一致；iOS 14 护栏。
 """
 
 import os
@@ -56,9 +57,9 @@ check("滤镜条是竖向 ScrollView",
       "ScrollView(.vertical, showsIndicators: false)" in rail)
 check("竖条里没有横向 ScrollView", "ScrollView(.horizontal" not in rail)
 check("竖条容器没有任何黑底 .background",
-      ".background(" not in rail.split("private func previewChip")[0])
+      ".background(" not in rail.split("private func railChip")[0])
 check("竖条里没有 Color.black.opacity(0.55) 的黑底条",
-      "Color.black.opacity(0.55)" not in rail.split("private func previewChip")[0])
+      "Color.black.opacity(0.55)" not in rail.split("private func railChip")[0])
 
 # ---------------------------------------------------------------- 2. 最左边 + 底栏满宽
 check("竖条在 portraitProHUD 里", "previewFilterRail" in hud)
@@ -77,16 +78,18 @@ check("清屏时竖条藏起来",
 # ---------------------------------------------------------------- 3. 分组还在
 groups = re.findall(r'PictCtrlPresetGroup\(title: "([^"]+)"', PRESETS)
 check("还是 11 组", len(groups) == 11, "、".join(groups))
-check("竖条按组排（ForEach groups）", "ForEach(PictCtrlPresets.groups)" in rail)
-check("组名显示出来", "Text(group.title)" in rail)
-check("组里芯片按组内顺序", "ForEach(group.presets)" in rail)
-check("「原图」仍是竖条第一个芯片",
+check("第一级按组排（ForEach groups）", "ForEach(PictCtrlPresets.groups)" in rail)
+check("组名是竖条芯片（railChip 传 group.title）",
+      "railChip(title: group.title" in rail)
+check("组里芯片按组内顺序（第二级 ForEach group.presets）",
+      "ForEach(group.presets)" in rail)
+check("「原图」仍是第一级第一个芯片",
       rail.find('previewChip(id: nil, title: "原图")')
       < rail.find("ForEach(PictCtrlPresets.groups)"))
 check("还是 121 套", PRESETS.count("PictCtrlPreset(id:") == 121)
 check("芯片上显示中文名", "title: preset.displayName" in rail)
 
-# ---------------------------------------------------------------- 4. 白芯片 + 横字 + 透明容器
+# ---------------------------------------------------------------- 4. 白窄芯片 + 字转 90° + 透明容器
 check("芯片白底（未选中 Color.white）",
       ".background(selected ? NikonTheme.accentBlue : Color.white)" in rail)
 check("芯片黑字（未选中 .black）",
@@ -94,19 +97,23 @@ check("芯片黑字（未选中 .black）",
 check("选中芯片蓝底白字高亮", "selected ? NikonTheme.accentBlue" in rail)
 check("芯片是小方块圆角 6，不是大药丸 14",
       ".cornerRadius(6)" in rail and ".cornerRadius(14)" not in rail)
-check("芯片固定宽 92，排成整齐一列", ".frame(width: 92)" in rail)
-check("竖条固定宽 104 贴左边缘", ".frame(width: 104)" in rail)
-check("竖条 + 芯片里没有 rotationEffect（中文横着写，不转）",
-      "rotationEffect" not in rail)
+check("芯片窄而高：宽 30pt，高随字数走",
+      ".frame(width: 30, height: railChipHeight(for: title))" in rail)
+check("竖条宽 42 贴左边缘", ".frame(width: 42)" in rail)
+check("芯片文字顺时针转 90°（跟框一个方向）",
+      "rotationEffect(.degrees(90))" in rail)
+check("芯片是单行字（没有横排的两行）", ".lineLimit(2)" not in rail)
 check("旧的深色药丸芯片没了（white.opacity(0.15) 底）",
       "Color.white.opacity(0.15)" not in rail)
 
-# ---------------------------------------------------------------- 5. 最长名字两行放得下
+# ---------------------------------------------------------------- 5. 最长名字转 90° 后放得下
 names = re.findall(r'displayName: "([^"]+)"', PRESETS)
 longest = max(names, key=len)
-check("最长中文名 12 个字，两行能放下（92pt、12pt 字，一行约 7 字）",
-      len(longest) <= 14, f"最长是「{longest}」（{len(longest)} 字）")
-check("芯片允许换两行", ".lineLimit(2)" in rail)
+check("最长中文名 13 个字，芯片高按 13pt/字 + 16pt 留白算",
+      len(longest) <= 14 and "CGFloat(title.count) * 13 + 16" in rail,
+      f"最长是「{longest}」（{len(longest)} 字）")
+check("芯片定宽防换行（fixedSize 横向）",
+      ".fixedSize(horizontal: true, vertical: false)" in rail)
 
 # ---------------------------------------------------------------- 6. 点选行为没变，预览只改显示
 check("点「原图」清除预览（nil 经 flatMap 得到 nil）",
@@ -125,9 +132,9 @@ for needle, label in [
 # ---------------------------------------------------------------- 7. 版本 + iOS 14 护栏
 YML = read("project.yml")
 PLIST = read("Z30Control/Info.plist")
-check("版本 1.0.32 / build 33 两处一致",
-      "MARKETING_VERSION: 1.0.32" in YML and "CURRENT_PROJECT_VERSION: 33" in YML and
-      "<string>1.0.32</string>" in PLIST and "<string>33</string>" in PLIST)
+check("版本 1.0.33 / build 34 两处一致",
+      "MARKETING_VERSION: 1.0.33" in YML and "CURRENT_PROJECT_VERSION: 34" in YML and
+      "<string>1.0.33</string>" in PLIST and "<string>34</string>" in PLIST)
 check("部署目标还是 14.0", 'deploymentTarget: "14.0"' in YML)
 for pat, label in [
     (r"onTapGesture\(.*location", "onTapGesture 带 location（iOS 17）"),
