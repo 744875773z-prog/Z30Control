@@ -21,7 +21,7 @@ v1.0.38：展开方式改成网格一次全显（见 test_v138）——组内预
    不再插进同一列；一次只展开一组，railExpandedGroupTitle 单值）。
 4. 字仍顺时针转 90°（跟框一个方向）；顶到最上方不变；容器全透明，
    不要黑底条。
-5. 版本 1.0.38 / build 39 两处一致；iOS 14 护栏。
+5. 版本 1.0.39 / build 40 两处一致；iOS 14 护栏。
 """
 
 import os
@@ -117,9 +117,9 @@ check("空状态整块仍是删掉的（取景页无未连接提示块）",
       "disconnectedEmptyState" not in VIEW)
 
 # ---------------------------------------------------------------- 5. 版本 + iOS 14 护栏
-check("版本 1.0.38 / build 39 两处一致",
-      "MARKETING_VERSION: 1.0.38" in YML and "CURRENT_PROJECT_VERSION: 39" in YML and
-      "<string>1.0.38</string>" in PLIST and "<string>39</string>" in PLIST)
+check("版本 1.0.39 / build 40 两处一致",
+      "MARKETING_VERSION: 1.0.39" in YML and "CURRENT_PROJECT_VERSION: 40" in YML and
+      "<string>1.0.39</string>" in PLIST and "<string>40</string>" in PLIST)
 check("iOS 14 护栏：没有 iOS 15+ 才有的 API（新式 alert / Button(role:) / .tint / 闭包 overlay）",
       "Button(role:" not in VIEW and ".tint(" not in VIEW
       and ".background(_:in:)" not in VIEW)

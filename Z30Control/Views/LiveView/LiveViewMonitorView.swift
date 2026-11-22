@@ -1014,6 +1014,11 @@ public struct LiveViewMonitorView: View {
 
     private func triggerShutterCapture() {
         guard !isCapturing else { return }
+        // v1.0.39：快门这一刻把选中的预览滤镜记下来，滤镜版就用这个渲染，
+        // 中途再换滤镜不影响这次；选的是“原图”（nil）就不走滤镜版保存。
+        let shutterPreset = selectedPreviewPresetID.flatMap { pid in
+            allPreviewPresets.first(where: { $0.id == pid })
+        }
         NikonTheme.triggerHaptic(style: .heavy)
         isCapturing = true
         if usbCamera.isUsbConnected {
@@ -1028,6 +1033,9 @@ public struct LiveViewMonitorView: View {
                             title: "快门已触发",
                             subtitle: "已触发，成片见图库"
                         )
+                        if let preset = shutterPreset {
+                            self.saveFilteredCopyAfterCapture(preset: preset, transport: .usb)
+                        }
                     } else {
                         self.showPreview(
                             filename: nil,
@@ -1047,6 +1055,9 @@ public struct LiveViewMonitorView: View {
                             title: "快门已触发",
                             subtitle: "已触发，成片见图库"
                         )
+                        if let preset = shutterPreset {
+                            self.saveFilteredCopyAfterCapture(preset: preset, transport: .wifi)
+                        }
                     } else {
                         self.showPreview(
                             filename: nil,
@@ -1059,6 +1070,24 @@ public struct LiveViewMonitorView: View {
         } else {
             isCapturing = false
             showPreview(filename: nil, title: "未连接相机", subtitle: "请先连上相机再拍摄")
+        }
+    }
+
+    /// v1.0.39：拍完在手机上加滤镜存一份——快门成功后把刚拍那张下下来，
+    /// 套快门那一刻选中的滤镜存进系统相册；相机卡里还是原片。
+    /// USB 传拍前快照当基线（capturePhoto 发快门前记下的卡内句柄），
+    /// Wi-Fi 由服务在入队时现读基线。
+    private func saveFilteredCopyAfterCapture(preset: PictCtrlPreset, transport: FilteredCaptureService.Transport) {
+        let baseline: Set<UInt32>? = (transport == .usb) ? usbCamera.preCaptureHandleSnapshot : nil
+        FilteredCaptureService.shared.enqueueFilteredSave(
+            preset: preset, transport: transport, baselineHandles: baseline
+        ) { outcome in
+            switch outcome {
+            case .saved:
+                self.showPreview(filename: nil, title: "滤镜版已存到相册", subtitle: preset.displayName)
+            case .failed(let err):
+                self.showPreview(filename: nil, title: "滤镜版保存失败", subtitle: err.message)
+            }
         }
     }
 

@@ -84,8 +84,39 @@ public final class MediaSyncService: ObservableObject {
         self.stats = FastTransferStats()
     }
     
+    // v1.0.39：新照片出现时的轻量观察者（拍后滤镜版保存用）。
+    // Wi-Fi 的 ObjectAdded 事件、USB 拍后复查插进图库的新对象都走这里；
+    // 只通知句柄，不下载、不改列表。观察者自己负责线程切换。
+    private var objectAddedObservers: [UUID: (UInt32) -> Void] = [:]
+    private let objectAddedObserversLock = NSLock()
+
+    public func addObjectAddedObserver(_ observer: @escaping (UInt32) -> Void) -> UUID {
+        objectAddedObserversLock.lock()
+        defer { objectAddedObserversLock.unlock() }
+        let id = UUID()
+        objectAddedObservers[id] = observer
+        return id
+    }
+
+    public func removeObjectAddedObserver(_ id: UUID) {
+        objectAddedObserversLock.lock()
+        defer { objectAddedObserversLock.unlock() }
+        objectAddedObservers.removeValue(forKey: id)
+    }
+
+    private func notifyObjectAdded(_ handle: UInt32) {
+        objectAddedObserversLock.lock()
+        let observers = Array(objectAddedObservers.values)
+        objectAddedObserversLock.unlock()
+        for o in observers { o(handle) }
+    }
+
     // MARK: - 捕获相机保护事件
     public func handlePtpEvent(eventCode: UInt16, objectId: UInt32) {
+        // v1.0.39：先通知观察者（拍后滤镜版保存），不管自动速传开没开。
+        if eventCode == PtpEventCode.objectAdded.rawValue {
+            notifyObjectAdded(objectId)
+        }
         guard isAutoTransferEnabled else { return }
         
         // 0x4007 (ObjectInfoChanged - 标记保护 🔒) 或 0x4002 (拍摄新照片)
@@ -240,6 +271,8 @@ public final class MediaSyncService: ObservableObject {
             self.fetchedItems.insert(item, at: 0)
             self.mediaItems.insert(item, at: 0)
             self.stats.indexedTotalFiles = self.fetchedItems.count
+            // v1.0.39：USB 拍后复查插进来的新对象也通知观察者（拍后滤镜版保存认新照片用）。
+            if let handle = ptpHandle { self.notifyObjectAdded(handle) }
             // v1.0.19：钉住刚拍的照片，防下一次目录刷新把它冲掉。
             if !self.pinnedCapturedItems.contains(where: { $0.filename == filename }) {
                 self.pinnedCapturedItems.insert(item, at: 0)
@@ -344,6 +377,12 @@ public final class MediaSyncService: ObservableObject {
         ptpClient.deleteObject(handle: handle) { ok, _ in completion(ok) }
     }
     
+    /// v1.0.39：拍后滤镜版保存用——把已渲染好的图片数据存进系统相册，
+    /// 复用图库批量保存同一条存相册通道（PHPhotoLibrary）。
+    public func saveImageDataToPhotos(_ data: Data, filename: String, completion: @escaping (Bool) -> Void) {
+        saveDataToPhotosOrFiles(data, filename: filename, completion: completion)
+    }
+
     /// JPEG/视频存入系统相册；NEF 无法直接写入相册，存到 App 文稿目录
     private func saveDataToPhotosOrFiles(_ data: Data, filename: String, completion: @escaping (Bool) -> Void) {
         let ext = (filename as NSString).pathExtension.lowercased()

@@ -102,6 +102,15 @@ public final class UsbCameraManager: NSObject, ObservableObject,
     private var preCaptureHandles: Set<UInt32> = []
     // v1.0.6：拍前快照是否成功读到（失败时不做复查，免得把整张卡都当成新照片）
     private var preCaptureSnapshotOK = false
+    // v1.0.39：拍后滤镜版保存用——拍前快照（capturePhoto 在发快门前记下
+    // 的卡内句柄）；快照没读到时为 nil，滤镜版保存就只靠事件/轮询兜底。
+    public var preCaptureHandleSnapshot: Set<UInt32>? {
+        preCaptureSnapshotOK ? preCaptureHandles : nil
+    }
+    // v1.0.39：拍后滤镜版保存轮询用——直接读卡内全部对象句柄。
+    public func fetchAllObjectHandlesPublic(completion: @escaping ([UInt32]?) -> Void) {
+        fetchAllObjectHandles(completion: completion)
+    }
     private var captureCheckWorkItem: DispatchWorkItem?
 
     // 属性读取队列 (避免 USB 拥塞)
