@@ -74,11 +74,11 @@ def run():
     print("== 版本与部署目标 ==")
     check("deploymentTarget 降到 14.0",
           'deploymentTarget: "14.0"' in yml)
-    check("版本 1.0.40 / build 41（两处一致，v1.0.30 起由 test_v130_presets 再验一遍）",
-          "MARKETING_VERSION: 1.0.40" in yml
-          and "CURRENT_PROJECT_VERSION: 41" in yml
-          and "<string>1.0.40</string>" in plist
-          and "<string>41</string>" in plist)
+    check("版本 1.0.41 / build 42（两处一致，v1.0.30 起由 test_v130_presets 再验一遍）",
+          "MARKETING_VERSION: 1.0.41" in yml
+          and "CURRENT_PROJECT_VERSION: 42" in yml
+          and "<string>1.0.41</string>" in plist
+          and "<string>42</string>" in plist)
 
     print("== iOS 15+ API 全清掉或加兜底 ==")
     check("没有 confirmationDialog 调用",

@@ -17,9 +17,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.40</string>
+    <string>1.0.41</string>
     <key>CFBundleVersion</key>
-    <string>41</string>
+    <string>42</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
     
@@ -45,6 +45,12 @@
     <string>需要相册保存权限，以便将从 Z30 相机下载的原片或胶片滤镜成片存入手机相册。</string>
     <key>NSPhotoLibraryUsageDescription</key>
     <string>需要访问相册，以显示与管理您已从相机导入的照片。</string>
+    
+    <!-- App 文稿目录文件共享（v1.0.41：NEF 写入相册失败的兜底文件在“文件”App 里可见） -->
+    <key>UIFileSharingEnabled</key>
+    <true/>
+    <key>LSSupportsOpeningDocumentsInPlace</key>
+    <true/>
     
     <!-- 蓝牙权限 (用于辅助唤醒相机) -->
     <key>NSBluetoothAlwaysUsageDescription</key>

@@ -21,7 +21,7 @@ v1.0.38：展开方式改成网格一次全显（见 test_v138）——组内预
    转 90° 后字不会顶出框。
 6. 点选行为没变：点芯片实时预览、点「原图」清除、离页清掉；
    预览只改显示，不写相机（渲染器/取景流里仍无写槽代码）。
-7. 版本 1.0.40 / build 41 两处一致；iOS 14 护栏。
+7. 版本 1.0.41 / build 42 两处一致；iOS 14 护栏。
 """
 
 import os
@@ -142,9 +142,9 @@ for needle, label in [
 # ---------------------------------------------------------------- 7. 版本 + iOS 14 护栏
 YML = read("project.yml")
 PLIST = read("Z30Control/Info.plist")
-check("版本 1.0.40 / build 41 两处一致",
-      "MARKETING_VERSION: 1.0.40" in YML and "CURRENT_PROJECT_VERSION: 41" in YML and
-      "<string>1.0.40</string>" in PLIST and "<string>41</string>" in PLIST)
+check("版本 1.0.41 / build 42 两处一致",
+      "MARKETING_VERSION: 1.0.41" in YML and "CURRENT_PROJECT_VERSION: 42" in YML and
+      "<string>1.0.41</string>" in PLIST and "<string>42</string>" in PLIST)
 check("部署目标还是 14.0", 'deploymentTarget: "14.0"' in YML)
 for pat, label in [
     (r"onTapGesture\(.*location", "onTapGesture 带 location（iOS 17）"),

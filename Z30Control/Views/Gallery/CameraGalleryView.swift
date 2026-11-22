@@ -187,10 +187,14 @@ public struct CameraGalleryView: View {
         // 老式 Alert 写法，iOS 14 能用；.alert(item:) 是 iOS 13 就有的 API。
         .alert(item: $activeAlert) { alert in
             switch alert {
-            case .saveResult(let succeeded, let total):
+            case .saveResult(let succeeded, let documents, let total):
+                var message = succeeded == total ? "已存入手机 \(succeeded) 张。" : "已存入手机 \(succeeded) 张，失败 \(total - succeeded) 张（相机连接可能断了，可以再选一次）。"
+                if documents > 0 {
+                    message += "其中 \(documents) 张写入相册失败，已存到 App 文稿目录，在“文件”App 里可以找到。"
+                }
                 return Alert(
                     title: Text("保存完成"),
-                    message: Text(succeeded == total ? "已存入手机 \(succeeded) 张。" : "已存入手机 \(succeeded) 张，失败 \(total - succeeded) 张（相机连接可能断了，可以再选一次）。"),
+                    message: Text(message),
                     dismissButton: .default(Text("好的"))
                 )
             case .deleteConfirm(let count):
@@ -237,10 +241,10 @@ public struct CameraGalleryView: View {
         batchProgress = (0, items.count)
         syncService.saveItems(items, progress: { done, total in
             DispatchQueue.main.async { self.batchProgress = (done, total) }
-        }, completion: { succeeded, total in
+        }, completion: { succeeded, documents, total in
             DispatchQueue.main.async {
                 self.batchSaving = false
-                self.activeAlert = .saveResult(succeeded: succeeded, total: total)
+                self.activeAlert = .saveResult(succeeded: succeeded, documents: documents, total: total)
                 if succeeded == total {
                     self.isSelecting = false
                     self.selectedFilenames.removeAll()
@@ -440,7 +444,7 @@ public struct CameraGalleryView: View {
 /// 一个 View 上挂多个 .alert(isPresented:) 时 SwiftUI 只认其中一个，
 /// 之前删除确认框就是这么被盖掉的。
 private enum GalleryAlert: Identifiable {
-    case saveResult(succeeded: Int, total: Int)
+    case saveResult(succeeded: Int, documents: Int, total: Int)
     case deleteConfirm(count: Int)
     case deleteResult(succeeded: Int, total: Int)
 

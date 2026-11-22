@@ -23,7 +23,7 @@ cube 按预设缓存，不每帧重算；预览叠加在降噪+锐化之后；
 4. 预览路径不调用任何写槽代码、不碰保存的照片。
 5. 预览在增强之后、只消费最新帧、不经过 JPEG 重压。
 6. 机身滤镜 tab、图库删除修复、NP3 已移除的状态没动。
-7. 版本 1.0.40 / build 41 两处一致；iOS 14 护栏。
+7. 版本 1.0.41 / build 42 两处一致；iOS 14 护栏。
 """
 
 import base64
@@ -244,9 +244,9 @@ check("全仓 Swift 源码里仍无 NP3",
 # ---------------------------------------------------------------- 7. 版本 + iOS 14 护栏
 YML = read("project.yml")
 PLIST = read("Z30Control/Info.plist")
-check("版本 1.0.40 / build 41 两处一致",
-      "MARKETING_VERSION: 1.0.40" in YML and "CURRENT_PROJECT_VERSION: 41" in YML and
-      "<string>1.0.40</string>" in PLIST and "<string>41</string>" in PLIST)
+check("版本 1.0.41 / build 42 两处一致",
+      "MARKETING_VERSION: 1.0.41" in YML and "CURRENT_PROJECT_VERSION: 42" in YML and
+      "<string>1.0.41</string>" in PLIST and "<string>42</string>" in PLIST)
 check("部署目标还是 14.0", 'deploymentTarget: "14.0"' in YML)
 for rel, src in [
     ("LivePreviewRenderer.swift", RENDERER),

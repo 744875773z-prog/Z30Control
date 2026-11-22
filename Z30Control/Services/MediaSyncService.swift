@@ -195,7 +195,8 @@ public final class MediaSyncService: ObservableObject {
         ptpClient.getObject(handle: objectId) { [weak self] data in
             guard let self = self, let data = data else { completion(false); return }
             let filename = self.fetchedItems.first(where: { $0.id == objectId })?.filename ?? "DSC_\(objectId).JPG"
-            self.saveDataToPhotosOrFiles(data, filename: filename) { ok in
+            self.saveDataToPhotosOrFiles(data, filename: filename) { outcome in
+                let ok = outcome != .failed
                 if ok {
                     let elapsed = Date().timeIntervalSince(started)
                     if elapsed > 0 {
@@ -231,14 +232,14 @@ public final class MediaSyncService: ObservableObject {
         }
     }
 
-    public func downloadAndSaveToPhotos(item: CameraMediaItem, completion: @escaping (Bool) -> Void) {
+    public func downloadAndSaveToPhotos(item: CameraMediaItem, completion: @escaping (PhotoSaveOutcome) -> Void) {
         // v1.0.17：下载收敛到 downloadOriginalData。之前这里 ICC 失败且
         // 项目没句柄时直接没了下文，completion 永远不调，详情页按钮
         // “正在从相机下载…”转到天荒地老。现在任何结果都有答复。
         downloadOriginalData(item: item) { [weak self] data in
-            guard let self = self, let data = data else { completion(false); return }
-            self.saveDataToPhotosOrFiles(data, filename: item.filename) { ok in
-                if ok {
+            guard let self = self, let data = data else { completion(.failed); return }
+            self.saveDataToPhotosOrFiles(data, filename: item.filename) { outcome in
+                if outcome != .failed {
                     DispatchQueue.main.async {
                         if let idx = self.mediaItems.firstIndex(where: { $0.id == item.id }) {
                             self.mediaItems[idx].isDownloaded = true
@@ -246,7 +247,7 @@ public final class MediaSyncService: ObservableObject {
                         self.stats.completedCount += 1
                     }
                 }
-                completion(ok)
+                completion(outcome)
             }
         }
     }
@@ -295,13 +296,17 @@ public final class MediaSyncService: ObservableObject {
 
     /// v1.0.18：批量保存（图库多选）。一张一张串行下，防 PTP 拥塞；
     /// 每下一张调一次 progress（已下张数/总数），最后调 completion（成功张数/总数）。
-    public func saveItems(_ items: [CameraMediaItem], progress: @escaping (Int, Int) -> Void, completion: @escaping (Int, Int) -> Void) {
+    public func saveItems(_ items: [CameraMediaItem], progress: @escaping (Int, Int) -> Void, completion: @escaping (_ succeeded: Int, _ documents: Int, _ total: Int) -> Void) {
         var succeeded = 0
+        var documents = 0
         func next(_ index: Int) {
-            guard index < items.count else { completion(succeeded, items.count); return }
+            guard index < items.count else { completion(succeeded, documents, items.count); return }
             progress(index + 1, items.count)
-            downloadAndSaveToPhotos(item: items[index]) { ok in
-                if ok { succeeded += 1 }
+            downloadAndSaveToPhotos(item: items[index]) { outcome in
+                if outcome != .failed {
+                    succeeded += 1
+                    if outcome == .documents { documents += 1 }
+                }
                 next(index + 1)
             }
         }
@@ -380,20 +385,26 @@ public final class MediaSyncService: ObservableObject {
     /// v1.0.39：拍后滤镜版保存用——把已渲染好的图片数据存进系统相册，
     /// 复用图库批量保存同一条存相册通道（PHPhotoLibrary）。
     public func saveImageDataToPhotos(_ data: Data, filename: String, completion: @escaping (Bool) -> Void) {
-        saveDataToPhotosOrFiles(data, filename: filename, completion: completion)
+        saveDataToPhotosOrFiles(data, filename: filename) { outcome in
+            completion(outcome == .photos)
+        }
     }
 
-    /// JPEG/视频存入系统相册；NEF 无法直接写入相册，存到 App 文稿目录
-    private func saveDataToPhotosOrFiles(_ data: Data, filename: String, completion: @escaping (Bool) -> Void) {
+    /// v1.0.41：保存结果——进了系统相册 / 相册拒收后存到 App 文稿目录 / 彻底失败。
+    /// NEF 走相册 fileURL 通道；相册不认才走文稿目录兜底，调用方按 .documents 提示用户。
+    enum PhotoSaveOutcome {
+        case photos
+        case documents
+        case failed
+    }
+
+    /// v1.0.41：JPEG/视频直接存入系统相册；NEF 用 fileURL 通道以 RAW 原样存入
+    /// 相册（iOS 27 官方支持 Z30 的 NEF，相册能存能显示），相册拒收才退回 App
+    /// 文稿目录。成败以 performChanges 回调为准。
+    private func saveDataToPhotosOrFiles(_ data: Data, filename: String, completion: @escaping (PhotoSaveOutcome) -> Void) {
         let ext = (filename as NSString).pathExtension.lowercased()
         if ext == "nef" {
-            let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent(filename)
-            do {
-                try data.write(to: url)
-                completion(true)
-            } catch {
-                completion(false)
-            }
+            saveNEFToPhotos(data, filename: filename, completion: completion)
             return
         }
         let isVideo = (ext == "mov" || ext == "mp4")
@@ -401,7 +412,48 @@ public final class MediaSyncService: ObservableObject {
             let req = PHAssetCreationRequest.forAsset()
             req.addResource(with: isVideo ? .video : .photo, data: data, options: nil)
         }) { success, _ in
-            completion(success)
+            completion(success ? .photos : .failed)
+        }
+    }
+
+    /// v1.0.41：NEF 进相册——先写临时 .NEF 文件，再用 fileURL 通道加为 .photo
+    /// 资源。相册不认（performChanges 回 false）就退回文稿目录。临时文件在回调里删掉。
+    private func saveNEFToPhotos(_ data: Data, filename: String, completion: @escaping (PhotoSaveOutcome) -> Void) {
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("NEF")
+        do {
+            try data.write(to: tempURL)
+        } catch {
+            completion(saveToDocuments(data, filename: filename) ? .documents : .failed)
+            return
+        }
+        PHPhotoLibrary.shared().performChanges({
+            let req = PHAssetCreationRequest.forAsset()
+            req.addResource(with: .photo, fileURL: tempURL, options: nil)
+        }) { [weak self] success, _ in
+            try? FileManager.default.removeItem(at: tempURL)
+            guard let self = self else {
+                // 服务是单例，正常走不到这里；走到了也按失败报，不谎报成功。
+                completion(.failed)
+                return
+            }
+            if success {
+                completion(.photos)
+                return
+            }
+            completion(self.saveToDocuments(data, filename: filename) ? .documents : .failed)
+        }
+    }
+
+    /// v1.0.41：文稿目录兜底——只有相册拒收 NEF 时才走这里。
+    private func saveToDocuments(_ data: Data, filename: String) -> Bool {
+        guard let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return false }
+        do {
+            try data.write(to: dir.appendingPathComponent(filename))
+            return true
+        } catch {
+            return false
         }
     }
     

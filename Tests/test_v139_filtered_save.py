@@ -32,7 +32,7 @@
 4. 渲染复用预览的烘焙函数，不抄一份；照片全分辨率、只编一次 JPEG。
 5. 保存走系统相册通道；失败有提示；不动卡里原片（无删除代码）。
 6. 下载渲染在后台队列，不冻取景；USB 下原图前后停/恢复取景。
-7. 版本 1.0.40 / build 41 两处一致；iOS 14 护栏。
+7. 版本 1.0.41 / build 42 两处一致；iOS 14 护栏。
 """
 
 import os
@@ -124,7 +124,8 @@ check("非 JPEG 原图（比如 NEF）不硬解，直接报不支持",
 check("保存走图库批量保存同一条存相册通道",
       "MediaSyncService.shared.saveImageDataToPhotos" in SERVICE
       and "saveImageDataToPhotos" in SYNC
-      and "saveDataToPhotosOrFiles(data, filename: filename, completion: completion)" in SYNC)
+      and "saveDataToPhotosOrFiles(data, filename: filename) { outcome in" in SYNC
+      and "completion(outcome == .photos)" in SYNC)
 check("相册保存权限键在 Info.plist 里",
       "NSPhotoLibraryAddUsageDescription" in PLIST)
 check("存好给轻提示（滤镜版已存到相册）",
@@ -149,9 +150,9 @@ check("多拍排队：一次只跑一个请求，按快门顺序排队",
       and "active == nil" in SERVICE)
 
 # ---------------------------------------------------------------- 6. 版本 + iOS 14 护栏
-check("版本 1.0.40 / build 41 两处一致",
-      "MARKETING_VERSION: 1.0.40" in YML and "CURRENT_PROJECT_VERSION: 41" in YML and
-      "<string>1.0.40</string>" in PLIST and "<string>41</string>" in PLIST)
+check("版本 1.0.41 / build 42 两处一致",
+      "MARKETING_VERSION: 1.0.41" in YML and "CURRENT_PROJECT_VERSION: 42" in YML and
+      "<string>1.0.41</string>" in PLIST and "<string>42</string>" in PLIST)
 for banned in ["onTapGesture", "Button(role:", ".tint(", ".background(_:in:",
                 "ultraThinMaterial", ".coordinateSpace(.named"]:
     check("新服务无 iOS 15+ API：%s" % banned, banned not in SERVICE)
