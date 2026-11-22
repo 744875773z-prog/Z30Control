@@ -40,11 +40,11 @@ public struct LiveViewMonitorView: View {
     // 展开组内选项选；芯片背景改磨砂玻璃质感，不用纯白。
     // v1.0.37：展开方式改成横向——组内预设不再插进同一列，改成竖条右侧
     // 紧贴着的第二列；该状态仍是“当前展开哪个组”，一次只展开一组。
+    // v1.0.38：第二列改成网格（previewExpandedGrid），一次全显、不滚动；
+    // 该状态仍是“当前展开哪个组”，一次只展开一组。v1.0.37 的对齐机
+    // 制（RailGroupTopKey + railGroupTops）随第二列一起删了——网格顶
+    // 对齐，不用跟被点分组的可见位置对齐。
     @State private var railExpandedGroupTitle: String? = nil
-    // v1.0.37：横向展开的对齐——第二列第一个预设要跟被点分组芯片顶部对齐。
-    // 竖条是 ScrollView，组芯片的可见位置随滚动变；用 PreferenceKey 把每个
-    // 组芯片在竖条坐标系里的可见 minY 传上来（见 RailGroupTopKey）。
-    @State private var railGroupTops: [String: CGFloat] = [:]
     
     // 参数选择面板（v1.0.14：之前是系统 ActionSheet，iOS 27 上弹出后被底栏
     // 挡住大半、点不到值。现在改成页内自己的底部面板，永远在底栏上面。）
@@ -412,18 +412,24 @@ public struct LiveViewMonitorView: View {
             VStack(spacing: 0) {
                 // v1.0.34：滤镜竖条贴左边缘、顶到最上方（不要 topSafeInset
                 // 的留白），从屏幕顶一直到底栏上面。
-                // v1.0.37：展开方式改成横向——点组后组内预设出现在竖条右侧
-                // 紧贴着的第二列（previewExpandedColumn），不再插进同一列、
-                // 不再顶走分组位置；横握手机时看过去，就是在分组上方横着
-                // 展开的一排选项。字顺时针转 90°（跟框一个方向），横握手机
-                // 时才横着读；芯片磨砂玻璃质感、容器全透明、不要黑底条。
-                // 清屏时竖条和展开列一起藏起来。未连接的空状态整块删了
+                // v1.0.38：展开方式改成网格——点组后组内预设出现在竖条右侧
+                // 紧贴着的网格（previewExpandedGrid），一列放不下就多列，
+                // 一次全显、不滚动（v1.0.37 的单列 12 个放不下，轻胶片被
+                // 截在底栏处还滑不到底）。字顺时针转 90°（跟框一个方向），
+                // 横握手机时才横着读；芯片磨砂玻璃质感、容器全透明、不要黑底条。
+                // 清屏时竖条和展开网格一起藏起来。未连接的空状态整块删了
                 // （同日黄圈），连接入口只留在「控制」页。
                 // 底栏挪出 HStack、单独放最下面一行占满宽，快门还在屏幕正中央。
                 HStack(alignment: .top, spacing: 0) {
                     if !isCleanScreen {
                         previewFilterRail
-                        previewExpandedColumn
+                        // 网格可用区：竖条占 42pt，左右各留一点边；高上底栏
+                        // 约 90pt，再留 110pt 余量——网格内容一定比这矮（见
+                        // previewGridLayout 的验算），不会顶到底栏。
+                        previewExpandedGrid(
+                            availWidth: geo.size.width - 42 - 16,
+                            availHeight: geo.size.height - 200
+                        )
                     }
                     // v1.0.36：竖条被 VStack 默认居中顶到了屏幕正中间（v1.0.34
                     // 删空状态时把 HStack 里撑宽的内容一起删了，只剩 42pt 宽的竖条）。
@@ -470,14 +476,17 @@ public struct LiveViewMonitorView: View {
         })?.title
     }
 
-    /// v1.0.37：横向展开——竖条本身只显示「原图」+ 11 个组名，点组不再
+    /// v1.0.38：网格展开——竖条本身只显示「原图」+ 11 个组名，点组不再
     /// 往同一列里插预设（v1.0.34–36 的内联展开：插进去的预设把分组顶走，
-    /// 位置老不对，用户 2026-11-22 20:16 纠正要横向展开）。组内预设改成
-    /// 竖条右侧紧贴着的第二列（previewExpandedColumn），分组列表本身不动、
-    /// 不位移、不滚动跳动；点一个组就换一列，一次只展开一组，再点收起。
-    /// 选中态两处都有标记（选中的预设芯片变蓝，它所在的组名也变蓝）。
-    /// 容器全透明、没有黑底条；点中哪个，取景画面实时套上该滤镜的样子；
-    /// 点「原图」恢复原样。只改手机屏幕显示，不写相机、不动原图。
+    /// 位置老不对），也不再是竖条右侧的单列（v1.0.37：单列 12 个放不下，
+    /// 通用影调的轻胶片被截在底栏处、滑不到底——列太长超出可视区，滚动
+    /// 也够不到底）。组内预设改成竖条右侧紧贴着的网格，一列放不下就
+    /// 自动多列（见 previewGridLayout），全部一次全显、没有 ScrollView、
+    /// 不用滚；分组列表本身不动、不位移；点一个组就换一个网格，一次只
+    /// 展开一组，再点收起。选中态两处都有标记（选中的预设芯片变蓝，它
+    /// 所在的组名也变蓝）。容器全透明、没有黑底条；点中哪个，取景画面
+    /// 实时套上该滤镜的样子；点「原图」恢复原样。只改手机屏幕显示，
+    /// 不写相机、不动原图。
     private var previewFilterRail: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 6) {
@@ -490,66 +499,97 @@ public struct LiveViewMonitorView: View {
                             railExpandedGroupTitle = expanding ? group.title : nil
                         }
                     }
-                    // v1.0.37：把该组芯片在竖条坐标系里的可见 minY 传上去，
-                    // 第二列据此补顶部留白，让第一个预设跟被点的分组顶部对齐。
-                    // 竖条滚了也实时跟（preference 随滚动变）。
-                    .background(
-                        GeometryReader { geo in
-                            Color.clear.preference(
-                                key: RailGroupTopKey.self,
-                                value: [group.title: geo.frame(in: .named("previewRailSpace")).minY]
-                            )
-                        }
-                    )
                 }
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 4)
         }
         .frame(width: 42)
-        .coordinateSpace(name: "previewRailSpace")
-        .onPreferenceChange(RailGroupTopKey.self) { railGroupTops = $0 }
     }
 
-    /// v1.0.37：组芯片可见顶部（竖条坐标系里的 minY）。PreferenceKey +
-    /// GeometryReader 都是 iOS 13 就有的 API，iOS 14 可用。
-    private struct RailGroupTopKey: PreferenceKey {
-        static var defaultValue: [String: CGFloat] = [:]
-        static func reduce(value: inout [String: CGFloat], nextValue: () -> [String: CGFloat]) {
-            value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    /// v1.0.38：网格排版（纯函数，好验算）——输入组内预设个数、组内最长
+    /// 名字字数、可用宽/高（竖屏坐标），输出列数、芯片统一高、列距、字号。
+    /// 芯片统一高：组内最长名 ×（字号 + 1）+ 16 上下留白（12pt 字时就是
+    /// 老公式 字数 × 13 + 16；同组芯片等高，网格才齐）。
+    /// 算法：字号从 12 往下试（12 → 8）、列距从 42 往下收（42 → 30）——
+    /// 先按可用高算一列最多放几行（行高 = 芯片高 + 6 间距），再算需要几列；
+    /// 列数 × 列距塞得进可用宽就定下来。最先试到的就是最大字号、最宽列距。
+    /// 验算（Tests/test_v138_grid_expand.py）：胶片组 24 个、13 字名在
+    /// iPhone 16 Pro Max（440×956，可用 382×673）是 8 列 × 3 行、12pt 字、
+    /// 列距 42；390 宽 iPhone 是 8 列 × 3 行、11pt 字、列距 36；mini 5
+    /// （768×1024）是 6 列 × 4 行、12pt 字、列距 42——三台机子都不滚动。
+    /// 只有 375 宽以下的旧小屏才会一路收到 8pt 字——Yuan 的两台机子走不到那步。
+    private struct PreviewGridLayout {
+        let columns: Int
+        let chipHeight: CGFloat
+        let colPitch: CGFloat
+        let fontSize: CGFloat
+    }
+
+    private func previewGridLayout(
+        presetCount: Int, maxNameLength: Int, availWidth: CGFloat, availHeight: CGFloat
+    ) -> PreviewGridLayout {
+        let spacing: CGFloat = 6
+        for fontSize in [12, 11, 10, 9, 8] as [CGFloat] {
+            let chipHeight = CGFloat(maxNameLength) * (fontSize + 1) + 16
+            let rows = max(1, Int((availHeight + spacing) / (chipHeight + spacing)))
+            let columns = (presetCount + rows - 1) / rows
+            for colPitch in [42, 36, 34, 30] as [CGFloat] {
+                if CGFloat(columns) * colPitch <= availWidth {
+                    return PreviewGridLayout(
+                        columns: columns, chipHeight: chipHeight,
+                        colPitch: colPitch, fontSize: fontSize
+                    )
+                }
+            }
         }
+        // 兜底（理论上到不了：上面 8pt 字 + 30 列距已是最小）：按最小规格排，
+        // 至少保证不崩；超小屏上网格可能顶出可视区，但不会闪退。
+        let chipHeight = CGFloat(maxNameLength) * 9 + 16
+        let rows = max(1, Int((availHeight + spacing) / (chipHeight + spacing)))
+        return PreviewGridLayout(
+            columns: (presetCount + rows - 1) / rows,
+            chipHeight: chipHeight, colPitch: 30, fontSize: 8
+        )
     }
 
-    /// v1.0.37：横向展开的第二列——紧贴在竖条右侧（同一 HStack 里，
-    /// alignment .top、spacing 0），只放当前展开那组的预设，芯片样式跟
-    /// 竖条一样（磨砂玻璃、字顺时针转 90°）。没展开时是空的，不占地方；
-    /// 预设多的时候这一列自己可以上下滚（胶片组 24 个）；换组时 id 变了，
-    /// ScrollView 重建，滚动位置回到顶部。点预设就应用预览。
-    private var previewExpandedColumn: some View {
+    /// v1.0.38：横向展开的网格——紧贴在竖条右侧（同一 HStack 里，
+    /// alignment .top、spacing 0），只放当前展开那组的预设；按列填
+    /// （先填满第一列、再填第二列，跟原来单列从上往下的阅读顺序一致），
+    /// 列数、芯片高、列距、字号全由 previewGridLayout 按可用区算出来，
+    /// 保证一次全显。没有 ScrollView，换组时 id 变了整个网格重建。
+    /// 点预设就应用预览；点预设的芯片样式跟竖条同款（磨砂玻璃、白字）。
+    private func previewExpandedGrid(availWidth: CGFloat, availHeight: CGFloat) -> some View {
         Group {
             if let title = railExpandedGroupTitle,
                let group = PictCtrlPresets.groups.first(where: { $0.title == title }) {
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(group.presets) { preset in
-                            previewChip(id: preset.id, title: preset.displayName)
+                let maxLen = group.presets.map { $0.displayName.count }.max() ?? 1
+                let layout = previewGridLayout(
+                    presetCount: group.presets.count, maxNameLength: maxLen,
+                    availWidth: availWidth, availHeight: availHeight
+                )
+                let rows = (group.presets.count + layout.columns - 1) / layout.columns
+                HStack(alignment: .top, spacing: layout.colPitch - 30) {
+                    ForEach(0..<layout.columns, id: \.self) { col in
+                        let start = col * rows
+                        let end = min(start + rows, group.presets.count)
+                        if start < end {
+                            VStack(alignment: .leading, spacing: 6) {
+                                ForEach(group.presets[start..<end]) { preset in
+                                    previewChip(
+                                        id: preset.id, title: preset.displayName,
+                                        height: layout.chipHeight, fontSize: layout.fontSize
+                                    )
+                                }
+                            }
                         }
                     }
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 4)
-                    .padding(.top, expandedColumnTopPadding(for: title))
                 }
-                .frame(width: 42)
-                .id("preview-expand-\(title)")
+                .padding(.leading, 6)
+                .padding(.top, 4)
+                .id("preview-grid-\(title)")
             }
         }
-    }
-
-    /// v1.0.37：第二列的顶部留白——让第一个预设的顶部跟被点分组芯片的
-    /// 可见顶部对齐。两列 VStack 都有 4pt 上边距，所以补的留白 = 该组
-    /// 芯片的可见 minY 减去 4pt；芯片滚出可视区时取 0，不倒贴。
-    private func expandedColumnTopPadding(for title: String) -> CGFloat {
-        max((railGroupTops[title] ?? 4) - 4, 0)
     }
 
     /// 磨砂玻璃背景（UIVisualEffectView 的 SwiftUI 包装，iOS 14 可用；
@@ -573,15 +613,27 @@ public struct LiveViewMonitorView: View {
     /// 2026-11-22 20:04 截图纠正）；改成最透的 systemUltraThinMaterialDark，
     /// 深色取景画面透得出来才是真玻璃；未选中字改白字，不然看不清；再加一圈
     /// 细白描边定住玻璃边缘。选中态在磨砂底上再盖一层半透明蓝，仍是蓝底白字。
+    /// v1.0.38：竖条和展开网格共用这一个芯片做法——竖条按名字算高（railChip），
+    /// 网格按组内最长名统一高、字号可能收小（previewChip 传 height/fontSize）。
     private func railChip(title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        filterChipButton(
+            title: title, height: railChipHeight(for: title), fontSize: 12,
+            selected: selected, action: action
+        )
+    }
+
+    private func filterChipButton(
+        title: String, height: CGFloat, fontSize: CGFloat,
+        selected: Bool, action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 12, weight: .bold))
+                .font(.system(size: fontSize, weight: .bold))
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
                 .rotationEffect(.degrees(90))
                 .foregroundColor(.white)
-                .frame(width: 30, height: railChipHeight(for: title))
+                .frame(width: 30, height: height)
                 .background(
                     ZStack {
                         FrostedGlassView(style: .systemUltraThinMaterialDark)
@@ -608,9 +660,16 @@ public struct LiveViewMonitorView: View {
         CGFloat(title.count) * 13 + 16
     }
 
-    private func previewChip(id: String?, title: String) -> some View {
+    /// 点预设芯片应用预览。默认按名字算高、12pt 字（竖条里用）；展开网格
+    /// 里用统一高 + 可能收小的字号（previewGridLayout 算出来，见调用处）。
+    private func previewChip(
+        id: String?, title: String, height: CGFloat? = nil, fontSize: CGFloat = 12
+    ) -> some View {
         let selected = selectedPreviewPresetID == id
-        return railChip(title: title, selected: selected) {
+        return filterChipButton(
+            title: title, height: height ?? railChipHeight(for: title),
+            fontSize: fontSize, selected: selected
+        ) {
             NikonTheme.triggerHaptic(style: .light)
             selectedPreviewPresetID = id
             // id 为 nil（原图）时 flatMap 得到 nil，预览清除。

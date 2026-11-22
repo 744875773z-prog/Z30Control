@@ -63,7 +63,7 @@ for chunk in chunks:
     title = chunk.split('"', 1)[0]
     model_groups[title] = chunk.count("PictCtrlPreset(id:")
 EXPECTED = {
-    "通用影调": 12, "影调族": 8, "低饱和 · 冷调 · 硬光": 20,
+    "通用影调": 12, "影调族": 8, "低饱和": 20,
     "胶片": 24, "电影": 21, "风光": 14, "暗调": 10,
     "街拍": 5, "日系": 5, "黑白": 1, "人像": 1,
 }

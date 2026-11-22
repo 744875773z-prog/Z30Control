@@ -49,9 +49,9 @@ def read(rel):
 PRESETS = read("Z30Control/Models/PictCtrlPresets.swift")
 VIEW = read("Z30Control/Views/Control/PictCtrlView.swift")
 
-# 分组表（1dlut 自己的分法）：40 参数化 = 通用 12 + 影调族 8 + 低饱和/冷调/硬光 20；
+# 分组表（1dlut 自己的分法）：40 参数化 = 通用 12 + 影调族 8 + 低饱和 20；
 # 81 配方库按 ncp_data.py 的 group 字段分 8 组。
-EXPECTED = [("通用影调", 12), ("影调族", 8), ("低饱和 · 冷调 · 硬光", 20),
+EXPECTED = [("通用影调", 12), ("影调族", 8), ("低饱和", 20),
             ("胶片", 24), ("电影", 21), ("风光", 14), ("暗调", 10),
             ("街拍", 5), ("日系", 5), ("黑白", 1), ("人像", 1)]
 

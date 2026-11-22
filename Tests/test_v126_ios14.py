@@ -99,10 +99,11 @@ def run():
     check("没有带位置的 onTapGesture（iOS 16/17 才有）",
           "onTapGesture { location" not in swift_src
           and "onTapGesture(coordinateSpace:" not in swift_src)
-    check(".coordinateSpace 只用 iOS 13 的 name: 形式（v1.0.37 竖条对齐）",
-          (lambda uses: bool(uses)
-           and all(u.startswith(".coordinateSpace(name:") for u in uses))(
-              re.findall(r"\.coordinateSpace\([^)]*\)", swift_src)))
+    # v1.0.38：竖条对齐机制（RailGroupTopKey）随第二列一起删了，.coordinateSpace
+    # 全项目已无调用；这条改成“要是有调用，只许 iOS 13 的 name: 形式”，零调用也算过。
+    check(".coordinateSpace 只用 iOS 13 的 name: 形式（v1.0.38 起已无调用）",
+          (lambda uses: all(u.startswith(".coordinateSpace(name:") for u in uses))(
+             re.findall(r"\.coordinateSpace\([^)]*\)", swift_src)))
     check("safeAreaInsets 只出现在 #available 兜底里",
           all("#available(iOS 15" in open(p, encoding="utf-8").read()
               for p in swift_files

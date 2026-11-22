@@ -7,7 +7,7 @@
 //  android/app/src/main/assets/builtin_presets.json 里预编译好的 614 字节载荷，
 //  原样照搬，只改了界面显示的中文名。配方名进载荷用 ASCII（cam 字段），
 //  中文只显示在界面上——机身不支持中文名，进载荷会变 ?。
-//  分组：40 套参数化内置 = 通用影调 12 + 影调族 8 + 低饱和/冷调/硬光 20；
+//  分组：40 套参数化内置 = 通用影调 12 + 影调族 8 + 低饱和 20；
 //  81 套配方库按 ncp_data.py 的 group 字段分 8 组：胶片 24、电影 21、风光 14、
 //  暗调 10、街拍 5、日系 5、黑白 1、人像 1。
 //  注意：1D 曲线只能改明暗影调，改不了色相；带自定义曲线时，机身的
@@ -81,7 +81,10 @@ public enum PictCtrlPresets {
             PictCtrlPreset(id: "deep-fade", displayName: "大幅褪色 · 压白", desc: "影调近似：大幅抬黑压白。不含去饱和", cameraName: "DEEP-FADE",
                 payloadBase64: "AgBERUVQLUZBREUAAAAAAAAAAAAAAAAAAAgEAAAAAAAAAAABSTAA/wD/AQ8FAAAzRWZtmZPMuAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD7gQERBsEMgRJRGDEeESPxKdEvwTWxO6FBkUeBTYFTcVlxX3FlcWtxcXF3gX2Bg4GJkY+hlaGbsaHBp9Gt4bPxugHAEcYxzEHSUdhx3oHkoeqx8NH28f0CAyIJQg9iFYIboiHCJ+IuAjQiOkJAYkaCTLJS0ljyXyJlQmticZJ3sn3ihAKKMpBiloKcsqLiqQKvMrViu5LBssfizhLUQtpy4KLm0u0C8zL5Yv+TBcML8xIjGGMekyTDKvMxMzdjPZNDw0oDUDNWc1yjYtNpE29DdYN7s4HziCOOY5STmtOhE6dDrYOzw7nzwDPGc8yj0uPZI99j5ZPr0/IT+FP+lATUCxQRVBeEHcQkBCpEMIQ2xD0EQ0RJhE/EVhRcVGKUaHRt5HNEeLR+JIOUiQSOhJP0mXSe9KSEqgSvlLUkurTARMXky3TRFNa03GTiBOe07WTzFPjU/oUERQoFD8UVhRtVISUm9SzFMpU4dT5FRCVKFU/1VeVbxWG1Z6VtpXOVeZV/lYWVi6WRtZe1ncWj5an1sBW2JbxFwnXIlc7F1PXbJeFV54XtxfQF+kYAhgbWDRYTZhm2IAYmZizGMyY5hj/mRkZMtlMmWZZgBmaGbQZzdnoGgIaHBo2WlCaatqFWp+auhrUmu8bCZskWz8bWdt0m49bqlvFG+Ab+1wWXDGcTI="),
         ]),
-        PictCtrlPresetGroup(title: "低饱和 · 冷调 · 硬光", presets: [
+        // v1.0.38：组名由“低饱和 · 冷调 · 硬光”改短成“低饱和”——用户
+        // 2026-11-22 20:27 截图反馈名字太长（竖条芯片 11 个字、159pt 高）。
+        // 注意：本文件由脚本生成，重新生成会把组名打回原样，到时再改一次。
+        PictCtrlPresetGroup(title: "低饱和", presets: [
             PictCtrlPreset(id: "fl25-cool-mute", displayName: "胶片 25 · 低饱和冷调", desc: "影调近似：低反差 + 抬黑 + 压高光，观感偏冷偏淡。饱和度 -2 随曲线写入；真正的冷色要把机身白平衡往低色温调", cameraName: "FL25-COOL",
                 payloadBase64: "AgBGTDI1LUNPT0wAAAAAAAAAAAAAAAAAAAQEAAAA+AAAAAABSTAA/wD/AQ8FAAAzOmZlmZHMuwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACYgJ3Ao3CpQK8gtSC7MMFAx1DNcNOQ2bDf0OYA7CDyQPhw/pEEsQrREOEXAR0RIyEpMS9BNUE7QUFBR0FNMVMhWRFe8WTRarFwgXZRfCGB4YehjVGTAZixnzGl4ayBszG54cCRx1HOAdTB23HiMejx77H2cf1CBAIK0hGSGGIfMiYCLNIzojpyQUJIIk7yVdJcsmOCamJxQngifwKF8ozSk7KaoqGCqHKvYrZSvTLEIssS0hLZAt/y5uLt4vTS+9MCwwnDEMMXwx7DJcMswzPDOsNBw0jDT9NW013jZONr83LzegOBE4gjjzOWQ51TpGOrc7KDuZPAs8fDztPV890D5CPrQ/JT+XQAlAe0DtQV5B0EJDQrVDJ0OZRAtEfUTwRWJF1UZHRqtHCkdpR8lIKUiJSOpJS0msSg5KcErSSzVLmEv8TF9MxE0oTY1N8k5YTr5PJE+LT/JQWVDBUSlRkVH6UmNSzVM2U6FUC1R2VOFVTVW5ViVWklb/V2xX2lhIWLdZJVmUWgRadFrkW1Vbxlw3XKldG12NXgBec17mX1pfzmBDYLhhLWGiYhhij2MFY3xj9GRrZORlXGXVZk5myGdCZ7xoNmixaS1pqGolaqFrHmubbBhslm0VbZNuEm6RbxFvkXAScJJxFHGVchdymXMcc590InSmdSp1rnYzdrg="),
             PictCtrlPreset(id: "fl26-warm-mute", displayName: "胶片 26 · 低饱和暖调", desc: "影调近似：轻抬黑、中间调略提亮，饱和度压低但暗部不发灰。不含暖色偏移", cameraName: "FL26-WARM",
