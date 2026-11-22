@@ -32,7 +32,9 @@ public struct LiveViewMonitorView: View {
     @State private var previewSubtitle = "成片已回传至手机"
     @State private var isCapturing = false
     @State private var showingWiredHelp = false
-    // v1.0.31：取景页顶部滤镜预览条选中的预设（nil = 原图，默认）。
+    // v1.0.32：取景页左侧竖向滤镜条选中的预设（nil = 原图，默认）。
+    // v1.0.31 是顶部横条，用户 2026-11-22 19:14 截图反馈：横着拍时顶条
+    // 挡画面，挪到最左边竖着放，11 组照旧，中文横着写，白芯片、不要黑底条。
     @State private var selectedPreviewPresetID: String? = nil
     // v1.0.15：未连接空状态里的“连接 Wi-Fi 热点”入口，直接在本页弹出连接向导。
     @State private var showingConnectionWizard = false
@@ -407,29 +409,35 @@ public struct LiveViewMonitorView: View {
     private var portraitProHUD: some View {
         GeometryReader { geo in
             VStack(spacing: 0) {
-                // v1.0.31：顶部滤镜预览条——横向可滚动，第一个「原图」，
-                // 后面是全部 121 套预设。点中哪个，取景画面实时套上该滤镜
-                // 的样子，只改手机屏幕显示，不写相机。清屏时藏起来。
-                if !isCleanScreen {
-                    previewFilterStrip
-                        .padding(.top, topSafeInset(geo))
+                // v1.0.32：滤镜条从顶部挪到最左边竖着放——用户横着拿手机拍，
+                // 顶部的横条挡画面、还得横着滑。竖条贴左边缘，从刘海下面
+                // 一直到底栏上面；11 组照旧（组名 + 组里芯片），中文横着写
+                // 不转；白色小方块芯片、容器全透明、不要黑底条。清屏时藏起来。
+                // 底栏挪出 HStack、单独放最下面一行占满宽，快门还在屏幕正中央。
+                HStack(spacing: 0, alignment: .top) {
+                    if !isCleanScreen {
+                        previewFilterRail
+                            .padding(.top, topSafeInset(geo))
+                    }
+
+                    // v1.0.24：上面参数全删了（用户 2026-11-21 20:43 截图圈的
+                    // 顶部整块：状态条 + 快门/光圈/ISO + 模式/白平衡/测光/±EV）。
+                    // 顶部留空，画面干净；满屏/完整切换挪到底部工具组。
+                    VStack(spacing: 0) {
+                        Spacer()
+
+                        // v1.0.15：未连接时的空状态放在这里（参数条和底栏之间），上下两个
+                        // Spacer 把剩余空间均分。之前它在底图中央只是一张小卡片，上下
+                        // 各空一大条黑边；现在是标题 + 两个连接入口，点 USB 进线连指引，
+                        // 点 Wi-Fi 直接弹出连接向导。
+                        if !isCleanScreen && !isDeviceConnected {
+                            disconnectedEmptyState
+                                .padding(.horizontal, 20)
+                        }
+
+                        Spacer()
+                    }
                 }
-
-                // v1.0.24：上面参数全删了（用户 2026-11-21 20:43 截图圈的
-                // 顶部整块：状态条 + 快门/光圈/ISO + 模式/白平衡/测光/±EV）。
-                // 顶部留空，画面干净；满屏/完整切换挪到底部工具组。
-                Spacer()
-
-                // v1.0.15：未连接时的空状态放在这里（参数条和底栏之间），上下两个
-                // Spacer 把剩余空间均分。之前它在底图中央只是一张小卡片，上下
-                // 各空一大条黑边；现在是标题 + 两个连接入口，点 USB 进线连指引，
-                // 点 Wi-Fi 直接弹出连接向导。
-                if !isCleanScreen && !isDeviceConnected {
-                    disconnectedEmptyState
-                        .padding(.horizontal, 20)
-                }
-
-                Spacer()
 
                 if !isCleanScreen {
                     // v1.0.19：本次拍摄条、滤镜条都不要了。底栏直接贴在 TabBar
@@ -465,29 +473,37 @@ public struct LiveViewMonitorView: View {
         }
     }
 
-    // MARK: - v1.0.31：取景页顶部滤镜预览条
-    /// 全部 121 套预设，按机身滤镜 tab 的 11 组顺序排平（组顺序不变，
-    /// 条里不分组，只按顺序排芯片）。
+    // MARK: - v1.0.32：取景页左侧竖向滤镜预览条
+    /// 全部 121 套预设，按机身滤镜 tab 的 11 组顺序排平（组顺序不变），
+    /// 点芯片时按 id 反查预设用；竖条里显示时按组分（见 previewFilterRail）。
     private var allPreviewPresets: [PictCtrlPreset] {
         PictCtrlPresets.groups.flatMap { $0.presets }
     }
 
-    /// 横向可滚动的滤镜条：第一个「原图」（无滤镜，默认选中），后面是
-    /// 全部 121 套预设，芯片上只写中文名。点中哪个就高亮，取景画面
-    /// 实时套上该滤镜的样子；点「原图」恢复原样。只改手机屏幕显示，
-    /// 不写相机、不动原图。
-    private var previewFilterStrip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+    /// 11 组按机身滤镜 tab 的顺序排，组里芯片按组内顺序；第一个是「原图」。
+    /// 容器全透明、没有黑底条；芯片是白色小方块、黑字，选中变蓝底白字；
+    /// 组名是小白字（带阴影，压在画面上能看清），中文一律横着写、不旋转。
+    /// 点中哪个，取景画面实时套上该滤镜的样子；点「原图」恢复原样。
+    /// 只改手机屏幕显示，不写相机、不动原图。
+    private var previewFilterRail: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 6) {
                 previewChip(id: nil, title: "原图")
-                ForEach(allPreviewPresets) { preset in
-                    previewChip(id: preset.id, title: preset.displayName)
+                ForEach(PictCtrlPresets.groups) { group in
+                    Text(group.title)
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.white)
+                        .shadow(color: .black, radius: 2)
+                        .padding(.top, 8)
+                    ForEach(group.presets) { preset in
+                        previewChip(id: preset.id, title: preset.displayName)
+                    }
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
         }
-        .background(Color.black.opacity(0.55))
+        .frame(width: 104)
     }
 
     private func previewChip(id: String?, title: String) -> some View {
@@ -501,12 +517,15 @@ public struct LiveViewMonitorView: View {
             }
         }) {
             Text(title)
-                .font(.system(size: 13, weight: .bold))
-                .foregroundColor(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .background(selected ? NikonTheme.accentBlue : Color.white.opacity(0.15))
-                .cornerRadius(14)
+                .font(.system(size: 12, weight: .bold))
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .foregroundColor(selected ? .white : .black)
+                .frame(width: 92)
+                .padding(.vertical, 6)
+                .background(selected ? NikonTheme.accentBlue : Color.white)
+                .cornerRadius(6)
+                .shadow(color: .black.opacity(0.25), radius: 2, x: 0, y: 1)
         }
         .buttonStyle(PlainButtonStyle())
     }
