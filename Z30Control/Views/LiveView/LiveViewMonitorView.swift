@@ -414,7 +414,7 @@ public struct LiveViewMonitorView: View {
                 // 一直到底栏上面；11 组照旧（组名 + 组里芯片），中文横着写
                 // 不转；白色小方块芯片、容器全透明、不要黑底条。清屏时藏起来。
                 // 底栏挪出 HStack、单独放最下面一行占满宽，快门还在屏幕正中央。
-                HStack(spacing: 0, alignment: .top) {
+                HStack(alignment: .top, spacing: 0) {
                     if !isCleanScreen {
                         previewFilterRail
                             .padding(.top, topSafeInset(geo))

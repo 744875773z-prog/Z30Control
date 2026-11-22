@@ -66,7 +66,7 @@ check("竖条在 HStack 第一位（最左边）",
       hud.find("previewFilterRail") < hud.find("disconnectedEmptyState"))
 check("底栏在竖条下面、单独一行占满宽",
       hud.find("portraitBottomControlDeck") > hud.find("previewFilterRail")
-      and "HStack(spacing: 0, alignment: .top)" in hud)
+      and "HStack(alignment: .top, spacing: 0)" in hud)
 check("底栏还是满宽横向内边距 16（快门居中）",
       ".padding(.horizontal, 16)" in hud)
 check("竖条贴顶部安全区（刘海/灵动岛下面）",
