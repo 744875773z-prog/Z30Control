@@ -242,7 +242,7 @@ public struct NP3FilterView: View {
         isSaving = true
         let baseName = (item.filename as NSString).deletingPathExtension
         let safeRecipeName = recipe.name
-            .map { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" || $0 == " " ? $0 : "-" }
+            .map { ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" || $0 == " ") ? String($0) : "-" }
             .joined()
             .replacingOccurrences(of: " ", with: "-")
         let outName = "\(baseName)-\(safeRecipeName).jpg"
