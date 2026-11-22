@@ -1,4 +1,4 @@
-"""v1.0.27 回归：导入 .NP3 文件，在图库照片上当滤镜套用。
+"""v1.0.28 回归：导入 .NP3 文件，在图库照片上当滤镜套用。
 
 三件事：
 1. 解析器逐字段对答案：用 ssssota deserialize.ts 的同一套偏移/公式
@@ -9,7 +9,7 @@
    （demo 实测：绿块 G-R 165.5→111.5，std 73.8→82.0）。
    另外检查 Swift 里的常量和 Python 版一一对应，防止两边写漂了。
 3. iOS 14 护栏：新文件里没有 iOS 15+ API；App 包里不内置任何 .NP3
-   （版权原因，只做用户自己导入）；版本 1.0.27 / build 28 两处一致；
+   （版权原因，只做用户自己导入）；版本 1.0.28 / build 29 两处一致；
    滤镜入口从详情页真实可达。
 """
 
@@ -359,14 +359,14 @@ def run():
     check("有色调曲线时对比等 5 项按原库返回 0",
           "hasTC ? 0 : s8(offsetContrast)" in parser)
 
-    print("== 版本 1.0.27 / build 28 ==")
+    print("== 版本 1.0.28 / build 29 ==")
     yml = read("project.yml")
     plist = read("Z30Control/Info.plist")
     check("两处版本一致",
-          "MARKETING_VERSION: 1.0.27" in yml
-          and "CURRENT_PROJECT_VERSION: 28" in yml
-          and "<string>1.0.27</string>" in plist
-          and "<string>28</string>" in plist)
+          "MARKETING_VERSION: 1.0.28" in yml
+          and "CURRENT_PROJECT_VERSION: 29" in yml
+          and "<string>1.0.28</string>" in plist
+          and "<string>29</string>" in plist)
     check("部署目标还是 14.0", 'deploymentTarget: "14.0"' in yml)
 
     print("== 入口真实可达 + 保存路径复用 ==")

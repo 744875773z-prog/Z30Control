@@ -381,6 +381,57 @@ public final class PtpIpClient {
         }
     }
     
+    // MARK: - v1.0.28：机身优化校准读写（GetPictCtrlData 0x90CC / SetPictCtrlData 0x90CD）
+    /// 读一个 C 槽的完整载荷（slot = 0x00C9–0x00D1 对应 C1–C9）。
+    /// 走 sendDataRequest（dataPhase=3），StartData → Data → EndData → CmdResponse 全套读完。
+    public func getPictCtrlData(slot: UInt32, completion: @escaping (Data?, UInt16?) -> Void) {
+        sendDataRequest(opCode: PtpOperationCode.nikonGetPictCtrlData.rawValue,
+                        params: [slot, 0], completion: completion)
+    }
+
+    /// 写一个 C 槽（614 字节载荷走数据阶段）。
+    /// 形态照抄 setDevicePropValue：CmdRequest（dataPhase=2，参数 [slot, 0]）
+    /// → StartData（含总长度 U64）→ EndData（614 字节载荷拼在包里）
+    /// → 读 CmdResponse。响应码从严：必须明确等于 0x2001 才算成功。
+    /// 注意：614 字节 EndData 包经 PTP/IP 从没人实测过——v1.0.28 的未验证点之一。
+    public func setPictCtrlData(slot: UInt32, payload: Data, completion: ((Bool) -> Void)? = nil) {
+        guard isSessionOpen else { completion?(false); return }
+        guard payload.count == 614 else { completion?(false); return }
+        enqueueCmdJob { [weak self] done in
+            guard let self = self else { done(); return }
+            let transId = self.nextTransactionId()
+            let packet = PtpIpPacket.makeCmdRequest(
+                opCode: PtpOperationCode.nikonSetPictCtrlData.rawValue,
+                transactionId: transId,
+                dataPhase: 2,
+                params: [slot, 0]
+            )
+            self.cmdConnection?.send(content: packet, completion: .contentProcessed { [weak self] error in
+                guard let self = self, error == nil else { completion?(false); done(); return }
+                var start = Data()
+                start.append(contentsOf: UInt32(20).littleEndianBytes)
+                start.append(contentsOf: PtpIpPacketType.startDataPacket.rawValue.littleEndianBytes)
+                start.append(contentsOf: transId.littleEndianBytes)
+                start.append(contentsOf: UInt64(payload.count).littleEndianBytes)
+                var end = Data()
+                end.append(contentsOf: UInt32(12 + payload.count).littleEndianBytes)
+                end.append(contentsOf: PtpIpPacketType.endDataPacket.rawValue.littleEndianBytes)
+                end.append(contentsOf: transId.littleEndianBytes)
+                end.append(payload)
+                self.cmdConnection?.send(content: start, completion: .contentProcessed { [weak self] e1 in
+                    guard let self = self, e1 == nil else { completion?(false); done(); return }
+                    self.cmdConnection?.send(content: end, completion: .contentProcessed { [weak self] e2 in
+                        guard let self = self, e2 == nil else { completion?(false); done(); return }
+                        self.readNextCmdPacket { resp in
+                            completion?(self.cmdResponseCode(resp) == PtpResponseCode.ok.rawValue)
+                            done()
+                        }
+                    })
+                })
+            })
+        }
+    }
+
     // MARK: - 触发物理半按快门 (测光与对焦锁)
     public func triggerHalfPress(active: Bool) {
         guard isSessionOpen else { return }

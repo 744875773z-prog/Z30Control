@@ -38,6 +38,10 @@ private enum NikonPTPOpCode: UInt16 {
     case nikonEndLiveView    = 0x9202 // 结束实时取景
     case nikonGetLiveViewImg = 0x9203 // 拉取实时取景帧
     case afDrive             = 0x90C1 // 自动对焦驱动（尼康厂商操作码）
+    // v1.0.28：机身优化校准读写（1dlut-z30-filters）。0x90CE 删槽指令绝不定义。
+    case getPictCtrlData      = 0x90CC // 读一个 C 槽的完整载荷
+    case setPictCtrlData      = 0x90CD // 写一个 C 槽（614 字节数据阶段）
+    case getPicCtrlCapability = 0x90CF // 查优化校准能力
 }
 
 // MARK: - 尼康 PTP 事件码
@@ -1220,6 +1224,60 @@ public final class UsbCameraManager: NSObject, ObservableObject,
             let ok = respCode == nil || respCode == 0x2001
             if !ok {
                 self?.setDiagnostic(String(format: "设置属性被拒 0x%04X", respCode!))
+            }
+            completion(ok)
+        }
+    }
+
+    // MARK: - v1.0.28：机身优化校准读写（GetPictCtrlData 0x90CC / SetPictCtrlData 0x90CD）
+    /// 读一个 C 槽的完整载荷（slot = 0x00C9–0x00D1 对应 C1–C9）。
+    /// 返回：载荷（614 字节完整配方 / 36 字节仅参数 / 全零空槽 / nil=没读到）、响应码。
+    /// 读法走 sendPTPDataCommand（数据在回调第一个参数里，v1.0.5 的突破）。
+    public func getPictCtrlData(slot: UInt32, completion: @escaping (Data?, UInt16?) -> Void) {
+        guard activeCamera != nil, isUsbConnected else { completion(nil, nil); return }
+        sendPTPDataCommand(opCode: NikonPTPOpCode.getPictCtrlData.rawValue,
+                           params: [slot, 0]) { payload, code, diag in
+            if payload == nil || code.map({ $0 != 0x2001 }) ?? false {
+                self.setDiagnostic("读 C 槽失败：\(diag)")
+            }
+            completion(payload, code)
+        }
+    }
+
+    /// 写一个 C 槽（614 字节载荷走数据阶段）。
+    /// 形态照抄 setCameraProp，但响应码从严：必须明确拿到 0x2001 才算成功，
+    /// nil 也算失败——写槽位不能用 setCameraProp 那种“nil 也算成功”的宽松判断。
+    /// 写之前先停取景帧拉取，写完恢复（和调参/拍照一样）。
+    /// 注意：614 字节 + 厂商操作码 0x90CD 经 ImageCaptureCore 的 outData，
+    /// 从没人实测过——这是 v1.0.28 最大的未验证点。
+    public func setPictCtrlData(slot: UInt32, payload: Data, completion: @escaping (Bool) -> Void) {
+        guard let camera = activeCamera, isUsbConnected else { completion(false); return }
+        guard payload.count == 614 else {
+            setDiagnostic("写 C 槽被拒：载荷必须是 614 字节，实际 \(payload.count)")
+            completion(false)
+            return
+        }
+        pauseLiveViewFetching()
+        let cmd = buildPTPCommandPacket(opCode: NikonPTPOpCode.setPictCtrlData.rawValue,
+                                        params: [slot, 0])
+        camera.requestSendPTPCommand(cmd, outData: payload) { [weak self] (_, responseData, error) in
+            DispatchQueue.main.async { [weak self] in self?.resumeLiveViewFetching() }
+            guard error == nil else {
+                self?.setDiagnostic("写 C 槽出错：\(error!.localizedDescription)")
+                completion(false)
+                return
+            }
+            var respCode: UInt16? = nil
+            if responseData.count >= 8 {
+                let t = UInt16(responseData[4]) | (UInt16(responseData[5]) << 8)
+                if t == 0x0003 {
+                    respCode = UInt16(responseData[6]) | (UInt16(responseData[7]) << 8)
+                }
+            }
+            // 从严：只有明确的 0x2001 算成功，nil / 其他一律失败
+            let ok = respCode == 0x2001
+            if !ok {
+                self?.setDiagnostic(String(format: "写 C 槽被拒，响应 0x%04X", respCode ?? 0))
             }
             completion(ok)
         }

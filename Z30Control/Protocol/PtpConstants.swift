@@ -51,6 +51,12 @@ public enum PtpOperationCode: UInt16 {
     
     // 尼康专用扩展操作码 (Nikon Vendor Extensions)
     case nikonGetEvent           = 0x90C7
+    // v1.0.28：机身优化校准读写（1dlut-z30-filters，逆向源头 z-cloud-ai）。
+    // 0x90CC 读 C 槽完整载荷，0x90CD 写 614 字节载荷，0x90CF 查能力。
+    // 注意：0x90CE 是删槽指令，破坏性，绝不进 App——这里故意不定义它。
+    case nikonGetPictCtrlData    = 0x90CC // 读一个 C 槽的完整载荷
+    case nikonSetPictCtrlData    = 0x90CD // 写一个 C 槽（614 字节数据阶段）
+    case nikonGetPicCtrlCapability = 0x90CF // 查优化校准能力
     case nikonStartLiveView      = 0x9201 // 开启实时取景
     case nikonEndLiveView        = 0x9202 // 结束实时取景
     case nikonGetLiveViewImg     = 0x9203 // 获取实时取景帧
