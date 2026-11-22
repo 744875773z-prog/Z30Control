@@ -1,23 +1,24 @@
-"""v1.0.33 回归：取景页左侧滤镜条改成两级钻取 + 字转 90°。
+"""v1.0.34 回归：取景页左侧滤镜条改成组内联展开 + 磨砂玻璃 + 顶到最上方，
+未连接的空状态整块删掉。
 
-用户 2026-11-22 19:28 对着 v1.0.32 纠正：分组要点开才进，不要一屏
-全摊开占屏；字也要顺时针转 90°（跟框一个方向），横握手机时才横着读。
-上次把“汉字横着写”理解成竖屏坐标里的横排，错了，这次按转 90° 改。
+用户 2026-11-22 19:40 对着 v1.0.33 截图圈改：竖条顶到最上方；芯片背景
+不要白色了，改磨砂玻璃质感；点组直接在该组上方展开组内选项选，
+不要两级钻取；中间“未检测到相机信号”空状态整块不要了。
 
 检查点：
 1. 顶部横条彻底没了；竖条是 ScrollView(.vertical)，仍在取景页最左边。
 2. 竖条在 portraitProHUD 里 HStack 第一位（最左边）；底栏单独在下面
    一行占满宽（快门仍在屏幕正中央，v1.0.24 的要求）；清屏时藏起来。
-3. 分组还在：11 组、121 套，组顺序不变；「原图」仍是第一级第一个。
-4. 芯片是白色窄条：白底黑字、圆角 6、宽 30pt、选中变蓝底白字；
+3. 分组还在：11 组、121 套，组顺序不变；「原图」仍是第一个。
+4. 芯片是磨砂玻璃窄条：磨砂底黑字、圆角 6、宽 30pt、选中变蓝底白字；
    容器全透明（竖条那段里没有任何 .background 黑底）；
    中文顺时针转 90°（railChip 里有 rotationEffect(.degrees(90))，
    且没有横排的 .lineLimit(2)）。
 5. 最长中文名 13 个字，芯片高按字数算（13pt/字 + 16pt 留白），
-   转 90° 后字不会顶出白框。
+   转 90° 后字不会顶出框。
 6. 点选行为没变：点芯片实时预览、点「原图」清除、离页清掉；
    预览只改显示，不写相机（渲染器/取景流里仍无写槽代码）。
-7. 版本 1.0.33 / build 34 两处一致；iOS 14 护栏。
+7. 版本 1.0.34 / build 35 两处一致；iOS 14 护栏。
 """
 
 import os
@@ -63,15 +64,16 @@ check("竖条里没有 Color.black.opacity(0.55) 的黑底条",
 
 # ---------------------------------------------------------------- 2. 最左边 + 底栏满宽
 check("竖条在 portraitProHUD 里", "previewFilterRail" in hud)
-check("竖条在 HStack 第一位（最左边）",
-      hud.find("previewFilterRail") < hud.find("disconnectedEmptyState"))
+check("HStack 里只有竖条（空状态删了）",
+      "disconnectedEmptyState" not in hud and "previewFilterRail" in hud)
 check("底栏在竖条下面、单独一行占满宽",
       hud.find("portraitBottomControlDeck") > hud.find("previewFilterRail")
       and "HStack(alignment: .top, spacing: 0)" in hud)
 check("底栏还是满宽横向内边距 16（快门居中）",
       ".padding(.horizontal, 16)" in hud)
-check("竖条贴顶部安全区（刘海/灵动岛下面）",
-      "previewFilterRail\n" in VIEW and "topSafeInset(geo)" in hud)
+check("竖条顶到最上方（不要 topSafeInset 留白）",
+      ".padding(.top, topSafeInset(geo))" not in VIEW
+      and "private func topSafeInset" not in VIEW)
 check("清屏时竖条藏起来",
       "if !isCleanScreen {\n                        previewFilterRail" in VIEW)
 
@@ -90,11 +92,13 @@ check("还是 121 套", PRESETS.count("PictCtrlPreset(id:") == 121)
 check("芯片上显示中文名", "title: preset.displayName" in rail)
 
 # ---------------------------------------------------------------- 4. 白窄芯片 + 字转 90° + 透明容器
-check("芯片白底（未选中 Color.white）",
-      ".background(selected ? NikonTheme.accentBlue : Color.white)" in rail)
+check("芯片磨砂玻璃底（未选中 FrostedGlassView）",
+      "FrostedGlassView(style: .systemMaterialLight)" in rail
+      and ".background(selected ? NikonTheme.accentBlue : Color.white)" not in rail)
 check("芯片黑字（未选中 .black）",
       ".foregroundColor(selected ? .white : .black)" in rail)
-check("选中芯片蓝底白字高亮", "selected ? NikonTheme.accentBlue" in rail)
+check("选中芯片蓝底白字高亮（磨砂底上盖半透明蓝）",
+      "NikonTheme.accentBlue.opacity(0.8)" in rail)
 check("芯片是小方块圆角 6，不是大药丸 14",
       ".cornerRadius(6)" in rail and ".cornerRadius(14)" not in rail)
 check("芯片窄而高：宽 30pt，高随字数走",
@@ -132,9 +136,9 @@ for needle, label in [
 # ---------------------------------------------------------------- 7. 版本 + iOS 14 护栏
 YML = read("project.yml")
 PLIST = read("Z30Control/Info.plist")
-check("版本 1.0.33 / build 34 两处一致",
-      "MARKETING_VERSION: 1.0.33" in YML and "CURRENT_PROJECT_VERSION: 34" in YML and
-      "<string>1.0.33</string>" in PLIST and "<string>34</string>" in PLIST)
+check("版本 1.0.34 / build 35 两处一致",
+      "MARKETING_VERSION: 1.0.34" in YML and "CURRENT_PROJECT_VERSION: 35" in YML and
+      "<string>1.0.34</string>" in PLIST and "<string>35</string>" in PLIST)
 check("部署目标还是 14.0", 'deploymentTarget: "14.0"' in YML)
 for pat, label in [
     (r"onTapGesture\(.*location", "onTapGesture 带 location（iOS 17）"),

@@ -233,9 +233,9 @@ for rel in NEW_FILES:
 # ---------------------------------------------------------------- 8. 版本 + 入口 + NP3 不动
 YML = read("project.yml")
 PLIST = read("Z30Control/Info.plist")
-check("版本 1.0.33 / build 34 两处一致",
-      "MARKETING_VERSION: 1.0.33" in YML and "CURRENT_PROJECT_VERSION: 34" in YML and
-      "<string>1.0.33</string>" in PLIST and "<string>34</string>" in PLIST)
+check("版本 1.0.34 / build 35 两处一致",
+      "MARKETING_VERSION: 1.0.34" in YML and "CURRENT_PROJECT_VERSION: 35" in YML and
+      "<string>1.0.34</string>" in PLIST and "<string>35</string>" in PLIST)
 check("project.yml 没有 info: 块（忽略注释行）",
       not any(re.match(r"\s*info\s*:", ln) for ln in YML.splitlines()
               if not ln.strip().startswith("#")))

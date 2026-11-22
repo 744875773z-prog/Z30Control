@@ -63,8 +63,10 @@ def run():
     print("== 源码：功能没丢 ==")
     check("满屏/完整切换还在（挪到底部）",
           "isFillScreen.toggle()" in live and "满屏" in live and "完整" in live)
-    check("未连接空状态还在（两个连接入口）",
-          "disconnectedEmptyState" in live and "USB-C 直连" in live)
+    # v1.0.34：未连接的空状态整块删了（用户 2026-11-22 19:40 黄圈），
+    # 连接入口只留在「控制」页——这里原来断言空状态还在，有意改掉。
+    check("未连接空状态已删（v1.0.34，用户点的黄圈）",
+          "disconnectedEmptyState" not in live and "USB-C 直连" not in live)
     check("快门还在", "triggerShutterCapture()" in live)
     check("DISP、网格、增强都在",
           '"DISP"' in live and "showingGridPicker = true" in live

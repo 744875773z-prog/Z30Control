@@ -31,17 +31,14 @@ public struct LiveViewMonitorView: View {
     @State private var previewTitle = "拍摄完成 · 即时预览 (2s)"
     @State private var previewSubtitle = "成片已回传至手机"
     @State private var isCapturing = false
-    @State private var showingWiredHelp = false
     // v1.0.32：取景页左侧竖向滤镜条选中的预设（nil = 原图，默认）。
     // v1.0.31 是顶部横条，用户 2026-11-22 19:14 截图反馈：横着拍时顶条
     // 挡画面，挪到最左边竖着放，11 组照旧，中文横着写，白芯片、不要黑底条。
     @State private var selectedPreviewPresetID: String? = nil
-    // v1.0.33：竖条两级钻取当前所在的组（nil = 第一级：原图 + 11 组名）。
-    // 用户 2026-11-22 19:28 纠正：分组要点开才进，不要一屏全摊开占屏；
-    // 字也要顺时针转 90°（跟框一个方向），横握手机时才横着读。
-    @State private var railSelectedGroupTitle: String? = nil
-    // v1.0.15：未连接空状态里的“连接 Wi-Fi 热点”入口，直接在本页弹出连接向导。
-    @State private var showingConnectionWizard = false
+    // v1.0.34：竖条组内联展开当前展开的组（nil = 全部收起）。
+    // 用户 2026-11-22 19:40 纠正：不要两级钻取，点组直接在该组上方
+    // 展开组内选项选；芯片背景改磨砂玻璃质感，不用纯白。
+    @State private var railExpandedGroupTitle: String? = nil
     
     // 参数选择面板（v1.0.14：之前是系统 ActionSheet，iOS 27 上弹出后被底栏
     // 挡住大半、点不到值。现在改成页内自己的底部面板，永远在底栏上面。）
@@ -74,9 +71,6 @@ public struct LiveViewMonitorView: View {
                     landscapeTwoWingHUD(size: geometry.size)
                 } else {
                     portraitProHUD
-                        .sheet(isPresented: $showingConnectionWizard) {
-                            ConnectionWizardView()
-                        }
                 }
 
                 // 3b. v1.0.14：参数选择面板（页内底部面板，不走系统 ActionSheet，
@@ -127,9 +121,6 @@ public struct LiveViewMonitorView: View {
                     }
                 }
             }
-        }
-        .sheet(isPresented: $showingWiredHelp) {
-            wiredConnectionGuidanceSheet
         }
         .onAppear {
             // v1.0.22：整页锁定竖屏，底栏在原来位置不动，只有中间取景画面
@@ -326,8 +317,8 @@ public struct LiveViewMonitorView: View {
             )
             
             // v1.0.15：这里只放“已连接但还没出画面”的启动卡片。未连接的空状态
-            // 不再放这里——之前它居中在整块底图上，只有一张小卡片，上下各空
-            // 一大条黑边；现在挪到 portraitProHUD 中部，带两个连接入口。
+            // v1.0.34 整个删了（用户 2026-11-22 19:40 黄圈），连接入口只留在
+            // 「控制」页；未连接时取景页就是空画面 + 竖条 + 底栏。
             if isDeviceConnected {
                 VStack(spacing: 14) {
                     if isAnyLiveViewStreaming {
@@ -413,34 +404,16 @@ public struct LiveViewMonitorView: View {
     private var portraitProHUD: some View {
         GeometryReader { geo in
             VStack(spacing: 0) {
-                // v1.0.33：滤镜竖条贴左边缘，从刘海下面一直到底栏上面。
-                // v1.0.32 是一屏全展开 121 套、中文横着写；用户 2026-11-22
-                // 19:28 纠正：分组要点开才进（两级钻取，占屏小），字也要
-                // 顺时针转 90°（跟框一个方向），横握手机时才横着读。
-                // 白色小方块芯片、容器全透明、不要黑底条。清屏时藏起来。
+                // v1.0.34：滤镜竖条贴左边缘、顶到最上方（不要 topSafeInset
+                // 的留白），从屏幕顶一直到底栏上面。点组直接在该组上方内联
+                // 展开组内选项（用户 2026-11-22 19:40 纠正，不要两级钻取）；
+                // 字顺时针转 90°（跟框一个方向），横握手机时才横着读；
+                // 芯片磨砂玻璃质感、容器全透明、不要黑底条。清屏时藏起来。
+                // 未连接的空状态整块删了（同日黄圈），连接入口只留在「控制」页。
                 // 底栏挪出 HStack、单独放最下面一行占满宽，快门还在屏幕正中央。
                 HStack(alignment: .top, spacing: 0) {
                     if !isCleanScreen {
                         previewFilterRail
-                            .padding(.top, topSafeInset(geo))
-                    }
-
-                    // v1.0.24：上面参数全删了（用户 2026-11-21 20:43 截图圈的
-                    // 顶部整块：状态条 + 快门/光圈/ISO + 模式/白平衡/测光/±EV）。
-                    // 顶部留空，画面干净；满屏/完整切换挪到底部工具组。
-                    VStack(spacing: 0) {
-                        Spacer()
-
-                        // v1.0.15：未连接时的空状态放在这里（参数条和底栏之间），上下两个
-                        // Spacer 把剩余空间均分。之前它在底图中央只是一张小卡片，上下
-                        // 各空一大条黑边；现在是标题 + 两个连接入口，点 USB 进线连指引，
-                        // 点 Wi-Fi 直接弹出连接向导。
-                        if !isCleanScreen && !isDeviceConnected {
-                            disconnectedEmptyState
-                                .padding(.horizontal, 20)
-                        }
-
-                        Spacer()
                     }
                 }
 
@@ -468,17 +441,7 @@ public struct LiveViewMonitorView: View {
         }
     }
 
-    // v1.0.31：顶部安全区（刘海/灵动岛），和 bottomSafeInset 同一个拿法。
-    private func topSafeInset(_ geo: GeometryProxy) -> CGFloat {
-        if #available(iOS 15, *) {
-            return geo.safeAreaInsets.top
-        } else {
-            let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene
-            return windowScene?.windows.first?.safeAreaInsets.top ?? 0
-        }
-    }
-
-    // MARK: - v1.0.33：取景页左侧竖向滤镜预览条（两级钻取）
+    // MARK: - v1.0.34：取景页左侧竖向滤镜预览条（组内联展开）
     /// 全部 121 套预设，按机身滤镜 tab 的 11 组顺序排（组顺序不变），
     /// 点芯片时按 id 反查预设用；竖条里显示时按组分（见 previewFilterRail）。
     private var allPreviewPresets: [PictCtrlPreset] {
@@ -493,32 +456,25 @@ public struct LiveViewMonitorView: View {
         })?.title
     }
 
-    /// 第一级只显示「原图」+ 11 个组名，点一个组就进第二级、只显示该组预设；
-    /// 第二级顶部「← 分组」返回组列表。点预设立即应用预览，选中态两级都有
-    /// 标记（第二级里预设芯片变蓝，第一级里它所在的组名也变蓝）。
-    /// 容器全透明、没有黑底条；点中哪个，取景画面实时套上该滤镜的样子；
-    /// 点「原图」恢复原样。只改手机屏幕显示，不写相机、不动原图。
+    /// v1.0.34：组内联展开——点组直接在该组上方展开组内选项选，不再两级钻取。
+    /// 平时只显示「原图」+ 11 个组名；展开的组其预设插在该组芯片正上方，
+    /// 一次只展开一组，占屏小；再点该组就收起。选中态两处都有标记
+    /// （展开的预设芯片变蓝，它所在的组名也变蓝）。容器全透明、没有黑底条；
+    /// 点中哪个，取景画面实时套上该滤镜的样子；点「原图」恢复原样。
+    /// 只改手机屏幕显示，不写相机、不动原图。
     private var previewFilterRail: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 6) {
-                if let title = railSelectedGroupTitle,
-                   let group = PictCtrlPresets.groups.first(where: { $0.title == title }) {
-                    // 第二级：返回 + 该组预设
-                    railChip(title: "← 分组", selected: false) {
-                        NikonTheme.triggerHaptic(style: .light)
-                        railSelectedGroupTitle = nil
-                    }
-                    ForEach(group.presets) { preset in
-                        previewChip(id: preset.id, title: preset.displayName)
-                    }
-                } else {
-                    // 第一级：原图 + 11 个组名
-                    previewChip(id: nil, title: "原图")
-                    ForEach(PictCtrlPresets.groups) { group in
-                        railChip(title: group.title, selected: selectedPresetGroupTitle == group.title) {
-                            NikonTheme.triggerHaptic(style: .light)
-                            railSelectedGroupTitle = group.title
+                previewChip(id: nil, title: "原图")
+                ForEach(PictCtrlPresets.groups) { group in
+                    if railExpandedGroupTitle == group.title {
+                        ForEach(group.presets) { preset in
+                            previewChip(id: preset.id, title: preset.displayName)
                         }
+                    }
+                    railChip(title: group.title, selected: selectedPresetGroupTitle == group.title) {
+                        NikonTheme.triggerHaptic(style: .light)
+                        railExpandedGroupTitle = (railExpandedGroupTitle == group.title) ? nil : group.title
                     }
                 }
             }
@@ -528,8 +484,24 @@ public struct LiveViewMonitorView: View {
         .frame(width: 42)
     }
 
-    /// 竖条芯片：白底白框、黑字，选中蓝底白字。字顺时针转 90°（跟取景框
+    /// 磨砂玻璃背景（UIVisualEffectView 的 SwiftUI 包装，iOS 14 可用；
+    /// SwiftUI 的 Material 是 iOS 15 才有的，mini 5 的 14.2 用不了）。
+    /// v1.0.34：滤镜芯片的白底改成磨砂玻璃质感。
+    private struct FrostedGlassView: UIViewRepresentable {
+        var style: UIBlurEffect.Style
+
+        func makeUIView(context: Context) -> UIVisualEffectView {
+            UIVisualEffectView(effect: UIBlurEffect(style: style))
+        }
+
+        func updateUIView(_ uiView: UIVisualEffectView, context: Context) {
+            uiView.effect = UIBlurEffect(style: style)
+        }
+    }
+
+    /// 竖条芯片：磨砂玻璃质感底、黑字，选中蓝底白字。字顺时针转 90°（跟取景框
     /// 同一个方向），横握手机时横着读。芯片窄而高：宽 30pt，高随字数走。
+    /// v1.0.34：白底改磨砂玻璃；选中态在磨砂底上再盖一层半透明蓝，仍是蓝底白字。
     private func railChip(title: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
@@ -539,7 +511,14 @@ public struct LiveViewMonitorView: View {
                 .rotationEffect(.degrees(90))
                 .foregroundColor(selected ? .white : .black)
                 .frame(width: 30, height: railChipHeight(for: title))
-                .background(selected ? NikonTheme.accentBlue : Color.white)
+                .background(
+                    ZStack {
+                        FrostedGlassView(style: .systemMaterialLight)
+                        if selected {
+                            NikonTheme.accentBlue.opacity(0.8)
+                        }
+                    }
+                )
                 .cornerRadius(6)
                 .shadow(color: .black.opacity(0.25), radius: 2, x: 0, y: 1)
         }
@@ -547,7 +526,7 @@ public struct LiveViewMonitorView: View {
     }
 
     /// 芯片高 = 字数 × 13pt + 16pt 上下留白（12pt 字，汉字宽 12pt，留点余量）。
-    /// 转 90° 后字的横向长度变成芯片的高度，估小了字会顶出白框。
+    /// 转 90° 后字的横向长度变成芯片的高度，估小了字会顶出框。
     private func railChipHeight(for title: String) -> CGFloat {
         CGFloat(title.count) * 13 + 16
     }
@@ -695,66 +674,6 @@ public struct LiveViewMonitorView: View {
         }
     }
     
-    // MARK: - 顶部状态条与线连指引入口
-    // MARK: - v1.0.15：未连接时的空状态（标题 + 两个连接入口）
-    private var disconnectedEmptyState: some View {
-        VStack(spacing: 18) {
-            VStack(spacing: 10) {
-                Image(systemName: "cable.connector.slash")
-                    .font(.system(size: 44))
-                    .foregroundColor(.white.opacity(0.4))
-                Text("未检测到相机信号")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(.white.opacity(0.85))
-                Text("请使用 USB-C 数据线直连，或在「连接」页连入相机 Wi-Fi 热点")
-                    .font(.system(size: 12))
-                    .foregroundColor(.white.opacity(0.5))
-                    .multilineTextAlignment(.center)
-            }
-            VStack(spacing: 10) {
-                connectOptionRow(icon: "cable.connector", title: "USB-C 直连", subtitle: "插线即连，最稳") {
-                    NikonTheme.triggerHaptic(style: .medium)
-                    showingWiredHelp = true
-                }
-                connectOptionRow(icon: "wifi", title: "连接相机 Wi-Fi 热点", subtitle: "相机开热点，手机加入后连接") {
-                    NikonTheme.triggerHaptic(style: .medium)
-                    showingConnectionWizard = true
-                }
-            }
-        }
-    }
-
-    private func connectOptionRow(icon: String, title: String, subtitle: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Image(systemName: icon)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(NikonTheme.accentBlue)
-                    .frame(width: 36, height: 36)
-                    .background(NikonTheme.accentBlue.opacity(0.15))
-                    .cornerRadius(10)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(.white)
-                    Text(subtitle)
-                        .font(.system(size: 11))
-                        .foregroundColor(.white.opacity(0.5))
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(.white.opacity(0.4))
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background(Color.black.opacity(0.45))
-            .cornerRadius(14)
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.12), lineWidth: 0.8))
-        }
-        .buttonStyle(PlainButtonStyle())
-    }
-
     // MARK: - 底部操作行 (清屏 DISP + 全屏大快门，v1.0.19：AF-ON 不要了)
     private var portraitBottomControlDeck: some View {
         // v1.0.24：快门严格居中——三组等宽（左 DISP+满屏 / 中快门 / 右网格+增强），
@@ -1073,105 +992,6 @@ public struct LiveViewMonitorView: View {
     }
     
     // MARK: - USB-C 有线连接排查指引弹窗 (极度关键：帮助用户解决无法线连相机的困惑)
-    private var wiredConnectionGuidanceSheet: some View {
-        NavigationView {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("为什么插上线无法识别相机？")
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundColor(.primary)
-                        Text("尼康相机直连 iPhone 需要在机身菜单做一次模式切换，否则 iOS 系统会将其当做普通的只读电脑配件。")
-                            .font(.system(size: 13))
-                            .foregroundColor(.gray)
-                    }
-                    .padding(.top, 10)
-                    
-                    Divider()
-                    
-                    // 步骤 1: 相机菜单设置
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Circle().fill(NikonTheme.nikonYellow).frame(width: 22, height: 22)
-                                .overlay(Text("1").font(.system(size: 12, weight: .bold)).foregroundColor(.black))
-                            Text("关键步骤：相机机身菜单设置")
-                                .font(.system(size: 15, weight: .bold))
-                        }
-                        Text("打开 Z 30 相机电源 -> 按 MENU 键 -> 进入【设置菜单】(扳手图标) 或【网络菜单】-> 找到【USB 数据连接】(USB Data Connection) -> 将其从默认的【MTP/PTP】更改为【iPhone】！")
-                            .font(.system(size: 13))
-                            .foregroundColor(.secondary)
-                            .padding(12)
-                            .background(Color.yellow.opacity(0.12))
-                            .cornerRadius(10)
-                    }
-                    
-                    // 步骤 2: 线缆确认
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Circle().fill(NikonTheme.nikonYellow).frame(width: 22, height: 22)
-                                .overlay(Text("2").font(.system(size: 12, weight: .bold)).foregroundColor(.black))
-                            Text("线缆要求：双头 Type-C 数据线")
-                                .font(.system(size: 15, weight: .bold))
-                        }
-                        Text("请务必使用支持数据传输的 USB-C to USB-C 线（如尼康原装 UC-E25 或手机原配快充数据线），切勿使用仅具备充电功能的地摊纯电线。")
-                            .font(.system(size: 13))
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    // 模式说明: USB 联机 vs Wi-Fi 取景
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Circle().fill(NikonTheme.nikonYellow).frame(width: 22, height: 22)
-                                .overlay(Text("3").font(.system(size: 12, weight: .bold)).foregroundColor(.black))
-                            Text("两种取景与传输工作流说明")
-                                .font(.system(size: 15, weight: .bold))
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("• 【USB-C 有线模式】（当前）：高保真联机拍摄。使用机身快门或 App 快门拍摄，成片直接进图库，在图库里选图保存到手机。")
-                                .font(.system(size: 12))
-                                .foregroundColor(.secondary)
-                            Text("• 【Wi-Fi 模式】：若需要无线 60 帧实时镜头画面预览与远程调参，在相机上按 MENU ➔ 连接至智能设备 ➔ 开启 Wi-Fi，手机连入相机热点即可。")
-                                .font(.system(size: 12))
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(12)
-                        .background(Color.blue.opacity(0.08))
-                        .cornerRadius(10)
-                    }
-                    
-                    // 步骤 4: 立即重新探测
-                    Button(action: {
-                        NikonTheme.triggerHaptic(style: .medium)
-                        showingWiredHelp = false
-                        connectionService.autoDetectAndConnect()
-                    }) {
-                        HStack {
-                            Image(systemName: "arrow.triangle.2.circlepath")
-                            Text("我已设置好，立即重新探测连接")
-                        }
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundColor(.black)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 48)
-                        .background(NikonTheme.nikonYellow)
-                        .cornerRadius(14)
-                    }
-                    .padding(.top, 10)
-                }
-                .padding(20)
-            }
-            .navigationTitle("USB-C 线连设置指引")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("关闭") {
-                        showingWiredHelp = false
-                    }
-                }
-            }
-        }
-    }
     
     // MARK: - v1.0.6：曝光参数真实下发 + 乐观更新
     // v1.0.4 是等相机回包才改显示，但取景帧抢通道，回包要等好几秒，看着像“反应非常慢”。

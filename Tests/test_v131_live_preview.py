@@ -1,8 +1,8 @@
 """v1.0.31 回归：实时取景页滤镜实时预览（v1.0.32 最左侧竖条；
-v1.0.33 两级钻取 + 字顺时针转 90°）。
+v1.0.34 组内联展开 + 磨砂玻璃 + 顶到最上方）。
 
-功能：取景页最左侧一条竖向可滚动的滤镜条，第一级是「原图」+ 11 个
-组名，点组进第二级看该组预设（121 套齐全，按机身滤镜 tab 的 11 组
+功能：取景页最左侧一条竖向可滚动的滤镜条，平时是「原图」+ 11 个
+组名，点组在该组上方展开组内预设（121 套齐全，按机身滤镜 tab 的 11 组
 顺序），点选后取景画面实时套上该滤镜的样子；点「原图」恢复原样。
 只做手机端预览，绝不影响相机、不写槽位、不改保存的照片。
 
@@ -18,12 +18,12 @@ cube 按预设缓存，不每帧重算；预览叠加在降噪+锐化之后；
    中性预设的 cube 是单位阵（黑点 stays 黑、白点 stays 白）；
    全部 121 套逐通道独立；32³ 尺寸 = 32*32*32*4 个 float。
 2. 饱和度映射：系数 = 1 + 值×0.1，全套在 0.7..1.3 内。
-3. 滤镜条两级钻取：第一级 12 项（原图 + 11 组），第二级是该组预设，
+3. 滤镜条组内联展开：平时「原图」+ 11 组，点组在该组上方展开预设，
    「原图」能清除预览。
 4. 预览路径不调用任何写槽代码、不碰保存的照片。
 5. 预览在增强之后、只消费最新帧、不经过 JPEG 重压。
 6. 机身滤镜 tab、图库删除修复、NP3 已移除的状态没动。
-7. 版本 1.0.33 / build 34 两处一致；iOS 14 护栏。
+7. 版本 1.0.34 / build 35 两处一致；iOS 14 护栏。
 """
 
 import base64
@@ -201,7 +201,7 @@ for needle, label in [
     check("渲染器文件里没有：" + label, needle not in RENDERER)
 
 # ---------------------------------------------------------------- 5. 取景页左侧两级滤镜条
-# v1.0.33：第一级「原图」+ 11 组名，点组进第二级；字顺时针转 90°。
+# v1.0.34：「原图」+ 11 组名，点组在该组上方内联展开；字顺时针转 90°。
 # （横向 ScrollView 在文件别处还有一个，是参数选择器，不是滤镜条。）
 rail_seg = VIEW[VIEW.find("private var previewFilterRail"):
                 VIEW.find("// MARK: - 横屏专业相机两翼透明 OSD 布局")]
@@ -221,9 +221,9 @@ check("滤镜竖条在 portraitProHUD 里", "previewFilterRail" in hud)
 check("滤镜竖条在底栏上面（先出现）",
       hud.find("previewFilterRail") < hud.find("portraitBottomControlDeck"))
 check("清屏时滤镜条藏起来", "if !isCleanScreen {\n                        previewFilterRail" in VIEW)
-check("滤镜条贴顶部安全区", "topSafeInset(geo)" in VIEW)
-check("选中芯片高亮（accentBlue 底）",
-      "selected ? NikonTheme.accentBlue" in VIEW)
+check("滤镜条顶到最上方（不要 topSafeInset 留白）", "topSafeInset(geo)" not in VIEW)
+check("选中芯片高亮（磨砂底上盖半透明蓝）",
+      "NikonTheme.accentBlue.opacity(0.8)" in VIEW)
 check("没有加标语和说明文字",
       "实时显示滤镜" not in VIEW and "点这里" not in VIEW)
 
@@ -244,9 +244,9 @@ check("全仓 Swift 源码里仍无 NP3",
 # ---------------------------------------------------------------- 7. 版本 + iOS 14 护栏
 YML = read("project.yml")
 PLIST = read("Z30Control/Info.plist")
-check("版本 1.0.33 / build 34 两处一致",
-      "MARKETING_VERSION: 1.0.33" in YML and "CURRENT_PROJECT_VERSION: 34" in YML and
-      "<string>1.0.33</string>" in PLIST and "<string>34</string>" in PLIST)
+check("版本 1.0.34 / build 35 两处一致",
+      "MARKETING_VERSION: 1.0.34" in YML and "CURRENT_PROJECT_VERSION: 35" in YML and
+      "<string>1.0.34</string>" in PLIST and "<string>35</string>" in PLIST)
 check("部署目标还是 14.0", 'deploymentTarget: "14.0"' in YML)
 for rel, src in [
     ("LivePreviewRenderer.swift", RENDERER),
