@@ -392,7 +392,8 @@ public final class MediaSyncService: ObservableObject {
 
     /// v1.0.41：保存结果——进了系统相册 / 相册拒收后存到 App 文稿目录 / 彻底失败。
     /// NEF 走相册 fileURL 通道；相册不认才走文稿目录兜底，调用方按 .documents 提示用户。
-    enum PhotoSaveOutcome {
+    /// 必须是 public：downloadAndSaveToPhotos 是公开方法，参数不能用内部类型。
+    public enum PhotoSaveOutcome {
         case photos
         case documents
         case failed

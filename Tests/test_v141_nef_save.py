@@ -70,7 +70,7 @@ check("NEF 进相册成败以 performChanges 回调为准",
       "PHAssetCreationRequest.forAsset()" in SYNC
       and "completion(.photos)" in SYNC)
 check("保存结果分三种：进相册 / 文稿目录兜底 / 彻底失败",
-      "enum PhotoSaveOutcome" in SYNC
+      "public enum PhotoSaveOutcome" in SYNC
       and "case photos" in SYNC
       and "case documents" in SYNC
       and "case failed" in SYNC)
