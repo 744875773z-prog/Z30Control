@@ -158,9 +158,9 @@ check("仍无 0x90CE 删槽代码",
 # ---------------------------------------------------------------- 5. 版本 + iOS 14 护栏
 YML = read("project.yml")
 PLIST = read("Z30Control/Info.plist")
-check("版本 1.0.36 / build 37 两处一致",
-      "MARKETING_VERSION: 1.0.36" in YML and "CURRENT_PROJECT_VERSION: 37" in YML and
-      "<string>1.0.36</string>" in PLIST and "<string>37</string>" in PLIST)
+check("版本 1.0.37 / build 38 两处一致",
+      "MARKETING_VERSION: 1.0.37" in YML and "CURRENT_PROJECT_VERSION: 38" in YML and
+      "<string>1.0.37</string>" in PLIST and "<string>38</string>" in PLIST)
 check("部署目标还是 14.0", 'deploymentTarget: "14.0"' in YML)
 for rel in ("Z30Control/Models/PictCtrlPresets.swift",
             "Z30Control/Views/Control/PictCtrlView.swift"):

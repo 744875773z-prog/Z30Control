@@ -38,7 +38,13 @@ public struct LiveViewMonitorView: View {
     // v1.0.34：竖条组内联展开当前展开的组（nil = 全部收起）。
     // 用户 2026-11-22 19:40 纠正：不要两级钻取，点组直接在该组上方
     // 展开组内选项选；芯片背景改磨砂玻璃质感，不用纯白。
+    // v1.0.37：展开方式改成横向——组内预设不再插进同一列，改成竖条右侧
+    // 紧贴着的第二列；该状态仍是“当前展开哪个组”，一次只展开一组。
     @State private var railExpandedGroupTitle: String? = nil
+    // v1.0.37：横向展开的对齐——第二列第一个预设要跟被点分组芯片顶部对齐。
+    // 竖条是 ScrollView，组芯片的可见位置随滚动变；用 PreferenceKey 把每个
+    // 组芯片在竖条坐标系里的可见 minY 传上来（见 RailGroupTopKey）。
+    @State private var railGroupTops: [String: CGFloat] = [:]
     
     // 参数选择面板（v1.0.14：之前是系统 ActionSheet，iOS 27 上弹出后被底栏
     // 挡住大半、点不到值。现在改成页内自己的底部面板，永远在底栏上面。）
@@ -405,15 +411,19 @@ public struct LiveViewMonitorView: View {
         GeometryReader { geo in
             VStack(spacing: 0) {
                 // v1.0.34：滤镜竖条贴左边缘、顶到最上方（不要 topSafeInset
-                // 的留白），从屏幕顶一直到底栏上面。点组直接在该组上方内联
-                // 展开组内选项（用户 2026-11-22 19:40 纠正，不要两级钻取）；
-                // 字顺时针转 90°（跟框一个方向），横握手机时才横着读；
-                // 芯片磨砂玻璃质感、容器全透明、不要黑底条。清屏时藏起来。
-                // 未连接的空状态整块删了（同日黄圈），连接入口只留在「控制」页。
+                // 的留白），从屏幕顶一直到底栏上面。
+                // v1.0.37：展开方式改成横向——点组后组内预设出现在竖条右侧
+                // 紧贴着的第二列（previewExpandedColumn），不再插进同一列、
+                // 不再顶走分组位置；横握手机时看过去，就是在分组上方横着
+                // 展开的一排选项。字顺时针转 90°（跟框一个方向），横握手机
+                // 时才横着读；芯片磨砂玻璃质感、容器全透明、不要黑底条。
+                // 清屏时竖条和展开列一起藏起来。未连接的空状态整块删了
+                // （同日黄圈），连接入口只留在「控制」页。
                 // 底栏挪出 HStack、单独放最下面一行占满宽，快门还在屏幕正中央。
                 HStack(alignment: .top, spacing: 0) {
                     if !isCleanScreen {
                         previewFilterRail
+                        previewExpandedColumn
                     }
                     // v1.0.36：竖条被 VStack 默认居中顶到了屏幕正中间（v1.0.34
                     // 删空状态时把 HStack 里撑宽的内容一起删了，只剩 42pt 宽的竖条）。
@@ -460,48 +470,86 @@ public struct LiveViewMonitorView: View {
         })?.title
     }
 
-    /// v1.0.34：组内联展开——点组直接在该组上方展开组内选项选，不再两级钻取。
-    /// 平时只显示「原图」+ 11 个组名；展开的组其预设插在该组芯片正上方，
-    /// 一次只展开一组，占屏小；再点该组就收起。选中态两处都有标记
-    /// （展开的预设芯片变蓝，它所在的组名也变蓝）。容器全透明、没有黑底条；
-    /// 点中哪个，取景画面实时套上该滤镜的样子；点「原图」恢复原样。
-    /// 只改手机屏幕显示，不写相机、不动原图。
-    /// v1.0.36：v1.0.34 真机上点组看着像没展开——预设插在组芯片上方，
-    /// 插入点经常在可视区外面，光改状态不够。展开后用 ScrollViewReader
-    /// 滚回该组，让组内选项落进可视区；加动画让展开看得见。
+    /// v1.0.37：横向展开——竖条本身只显示「原图」+ 11 个组名，点组不再
+    /// 往同一列里插预设（v1.0.34–36 的内联展开：插进去的预设把分组顶走，
+    /// 位置老不对，用户 2026-11-22 20:16 纠正要横向展开）。组内预设改成
+    /// 竖条右侧紧贴着的第二列（previewExpandedColumn），分组列表本身不动、
+    /// 不位移、不滚动跳动；点一个组就换一列，一次只展开一组，再点收起。
+    /// 选中态两处都有标记（选中的预设芯片变蓝，它所在的组名也变蓝）。
+    /// 容器全透明、没有黑底条；点中哪个，取景画面实时套上该滤镜的样子；
+    /// 点「原图」恢复原样。只改手机屏幕显示，不写相机、不动原图。
     private var previewFilterRail: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 6) {
-                    previewChip(id: nil, title: "原图")
-                    ForEach(PictCtrlPresets.groups) { group in
-                        if railExpandedGroupTitle == group.title {
-                            ForEach(group.presets) { preset in
-                                previewChip(id: preset.id, title: preset.displayName)
-                            }
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 6) {
+                previewChip(id: nil, title: "原图")
+                ForEach(PictCtrlPresets.groups) { group in
+                    railChip(title: group.title, selected: selectedPresetGroupTitle == group.title) {
+                        NikonTheme.triggerHaptic(style: .light)
+                        let expanding = railExpandedGroupTitle != group.title
+                        withAnimation {
+                            railExpandedGroupTitle = expanding ? group.title : nil
                         }
-                        railChip(title: group.title, selected: selectedPresetGroupTitle == group.title) {
-                            NikonTheme.triggerHaptic(style: .light)
-                            let expanding = railExpandedGroupTitle != group.title
-                            withAnimation {
-                                railExpandedGroupTitle = expanding ? group.title : nil
-                            }
-                            if expanding {
-                                DispatchQueue.main.async {
-                                    withAnimation {
-                                        proxy.scrollTo("rail-group-\(group.title)", anchor: .center)
-                                    }
-                                }
-                            }
-                        }
-                        .id("rail-group-\(group.title)")
                     }
+                    // v1.0.37：把该组芯片在竖条坐标系里的可见 minY 传上去，
+                    // 第二列据此补顶部留白，让第一个预设跟被点的分组顶部对齐。
+                    // 竖条滚了也实时跟（preference 随滚动变）。
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear.preference(
+                                key: RailGroupTopKey.self,
+                                value: [group.title: geo.frame(in: .named("previewRailSpace")).minY]
+                            )
+                        }
+                    )
                 }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 4)
             }
-            .frame(width: 42)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
         }
+        .frame(width: 42)
+        .coordinateSpace(name: "previewRailSpace")
+        .onPreferenceChange(RailGroupTopKey.self) { railGroupTops = $0 }
+    }
+
+    /// v1.0.37：组芯片可见顶部（竖条坐标系里的 minY）。PreferenceKey +
+    /// GeometryReader 都是 iOS 13 就有的 API，iOS 14 可用。
+    private struct RailGroupTopKey: PreferenceKey {
+        static var defaultValue: [String: CGFloat] = [:]
+        static func reduce(value: inout [String: CGFloat], nextValue: () -> [String: CGFloat]) {
+            value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+        }
+    }
+
+    /// v1.0.37：横向展开的第二列——紧贴在竖条右侧（同一 HStack 里，
+    /// alignment .top、spacing 0），只放当前展开那组的预设，芯片样式跟
+    /// 竖条一样（磨砂玻璃、字顺时针转 90°）。没展开时是空的，不占地方；
+    /// 预设多的时候这一列自己可以上下滚（胶片组 24 个）；换组时 id 变了，
+    /// ScrollView 重建，滚动位置回到顶部。点预设就应用预览。
+    private var previewExpandedColumn: some View {
+        Group {
+            if let title = railExpandedGroupTitle,
+               let group = PictCtrlPresets.groups.first(where: { $0.title == title }) {
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(group.presets) { preset in
+                            previewChip(id: preset.id, title: preset.displayName)
+                        }
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+                    .padding(.top, expandedColumnTopPadding(for: title))
+                }
+                .frame(width: 42)
+                .id("preview-expand-\(title)")
+            }
+        }
+    }
+
+    /// v1.0.37：第二列的顶部留白——让第一个预设的顶部跟被点分组芯片的
+    /// 可见顶部对齐。两列 VStack 都有 4pt 上边距，所以补的留白 = 该组
+    /// 芯片的可见 minY 减去 4pt；芯片滚出可视区时取 0，不倒贴。
+    private func expandedColumnTopPadding(for title: String) -> CGFloat {
+        max((railGroupTops[title] ?? 4) - 4, 0)
     }
 
     /// 磨砂玻璃背景（UIVisualEffectView 的 SwiftUI 包装，iOS 14 可用；

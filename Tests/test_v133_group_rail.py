@@ -1,6 +1,9 @@
 """v1.0.34 回归：取景页左侧滤镜条改成组内联展开 + 磨砂玻璃 + 顶到最上方，
 未连接的空状态整块删掉。
 
+v1.0.37：展开方式改成横向第二列（见 test_v137）——组内预设不再插进
+同一列；本套件的展开断言已同步改成横向展开，其他检查点不变。
+
 用户 2026-11-22 19:40 对着 v1.0.33 截图圈改：
 红圈（左侧竖条）：顶到最上方；背景不要白色了，改磨砂玻璃质感；
 点组直接在该组上方展开组内选项选，不要两级钻取。
@@ -22,7 +25,7 @@
 6. 字仍顺时针转 90°（跟框一个方向）；芯片窄而高（宽 30pt、高随字数走）。
 7. 点选仍能触发预览（点预设立即应用、点原图清除）；预览只改显示，
    不写相机。
-8. 版本 1.0.36 / build 37 两处一致；iOS 14 护栏。
+8. 版本 1.0.37 / build 38 两处一致；iOS 14 护栏。
 """
 
 import os
@@ -76,9 +79,11 @@ check("平时只显示「原图」+ 11 个组名",
       'previewChip(id: nil, title: "原图")' in rail
       and "ForEach(PictCtrlPresets.groups)" in rail)
 groups_block = rail.split("ForEach(PictCtrlPresets.groups)", 1)[1]
-check("组内预设插在该组芯片上方（先 ForEach presets，后 group 芯片）",
-      groups_block.find("ForEach(group.presets)")
-      < groups_block.find("railChip(title: group.title"))
+railfunc = VIEW[rail_start:VIEW.find("private struct RailGroupTopKey")]
+col_block = VIEW[VIEW.find("private var previewExpandedColumn"):]
+check("组内预设改到竖条右侧第二列，不再插进同一列（v1.0.37 横向展开）",
+      "ForEach(group.presets)" not in railfunc
+      and "ForEach(group.presets)" in col_block)
 check("点组切换展开/收起（同组再点就收起）",
       "railExpandedGroupTitle = expanding ? group.title : nil" in VIEW
       and "let expanding = railExpandedGroupTitle != group.title" in VIEW)
@@ -111,8 +116,9 @@ check("选中在磨砂底上盖半透明蓝（仍是蓝底白字）",
       and ".foregroundColor(.white)" in rail)
 check("芯片圆角 6", ".cornerRadius(6)" in rail)
 check("竖条宽 42 贴左边缘", ".frame(width: 42)" in rail)
-check("竖条容器没有任何黑底 .background",
-      ".background(" not in rail.split("private func railChip")[0])
+check("竖条容器没有任何颜色底 .background（GeometryReader 量位置除外）",
+      ".background(Color" not in rail.split("private func railChip")[0]
+      and ".background(NikonTheme" not in rail.split("private func railChip")[0])
 
 # ---------------------------------------------------------------- 4. 竖条顶到最上方
 check("竖条不要 topSafeInset 的留白",
@@ -163,9 +169,9 @@ for needle, label in [
 # ---------------------------------------------------------------- 8. 版本 + iOS 14 护栏
 YML = read("project.yml")
 PLIST = read("Z30Control/Info.plist")
-check("版本 1.0.36 / build 37 两处一致",
-      "MARKETING_VERSION: 1.0.36" in YML and "CURRENT_PROJECT_VERSION: 37" in YML and
-      "<string>1.0.36</string>" in PLIST and "<string>37</string>" in PLIST)
+check("版本 1.0.37 / build 38 两处一致",
+      "MARKETING_VERSION: 1.0.37" in YML and "CURRENT_PROJECT_VERSION: 38" in YML and
+      "<string>1.0.37</string>" in PLIST and "<string>38</string>" in PLIST)
 check("部署目标还是 14.0", 'deploymentTarget: "14.0"' in YML)
 for pat, label in [
     (r"onTapGesture\(.*location", "onTapGesture 带 location（iOS 17）"),

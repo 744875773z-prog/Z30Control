@@ -1,6 +1,9 @@
 """v1.0.34 回归：取景页左侧滤镜条改成组内联展开 + 磨砂玻璃 + 顶到最上方，
 未连接的空状态整块删掉。
 
+v1.0.37：展开方式改成横向第二列（见 test_v137）——组内预设不再插进
+同一列；本套件只守竖条/芯片/玻璃等不变项，展开断言在 test_v137。
+
 用户 2026-11-22 19:40 对着 v1.0.33 截图圈改：竖条顶到最上方；芯片背景
 不要白色了，改磨砂玻璃质感；点组直接在该组上方展开组内选项选，
 不要两级钻取；中间“未检测到相机信号”空状态整块不要了。
@@ -18,7 +21,7 @@
    转 90° 后字不会顶出框。
 6. 点选行为没变：点芯片实时预览、点「原图」清除、离页清掉；
    预览只改显示，不写相机（渲染器/取景流里仍无写槽代码）。
-7. 版本 1.0.36 / build 37 两处一致；iOS 14 护栏。
+7. 版本 1.0.37 / build 38 两处一致；iOS 14 护栏。
 """
 
 import os
@@ -57,15 +60,17 @@ check("顶部横条定义没了", "previewFilterStrip" not in VIEW)
 check("滤镜条是竖向 ScrollView",
       "ScrollView(.vertical, showsIndicators: false)" in rail)
 check("竖条里没有横向 ScrollView", "ScrollView(.horizontal" not in rail)
-check("竖条容器没有任何黑底 .background",
-      ".background(" not in rail.split("private func railChip")[0])
+check("竖条容器没有任何颜色底 .background（GeometryReader 量位置除外）",
+      ".background(Color" not in rail.split("private func railChip")[0]
+      and ".background(NikonTheme" not in rail.split("private func railChip")[0])
 check("竖条里没有 Color.black.opacity(0.55) 的黑底条",
       "Color.black.opacity(0.55)" not in rail.split("private func railChip")[0])
 
 # ---------------------------------------------------------------- 2. 最左边 + 底栏满宽
 check("竖条在 portraitProHUD 里", "previewFilterRail" in hud)
-check("HStack 里只有竖条（空状态删了）",
-      "disconnectedEmptyState" not in hud and "previewFilterRail" in hud)
+check("HStack 里是竖条 + 横向展开的第二列（空状态删了）",
+      "disconnectedEmptyState" not in hud and "previewFilterRail" in hud
+      and "previewExpandedColumn" in hud)
 check("底栏在竖条下面、单独一行占满宽",
       hud.find("portraitBottomControlDeck") > hud.find("previewFilterRail")
       and "HStack(alignment: .top, spacing: 0)" in hud)
@@ -136,9 +141,9 @@ for needle, label in [
 # ---------------------------------------------------------------- 7. 版本 + iOS 14 护栏
 YML = read("project.yml")
 PLIST = read("Z30Control/Info.plist")
-check("版本 1.0.36 / build 37 两处一致",
-      "MARKETING_VERSION: 1.0.36" in YML and "CURRENT_PROJECT_VERSION: 37" in YML and
-      "<string>1.0.36</string>" in PLIST and "<string>37</string>" in PLIST)
+check("版本 1.0.37 / build 38 两处一致",
+      "MARKETING_VERSION: 1.0.37" in YML and "CURRENT_PROJECT_VERSION: 38" in YML and
+      "<string>1.0.37</string>" in PLIST and "<string>38</string>" in PLIST)
 check("部署目标还是 14.0", 'deploymentTarget: "14.0"' in YML)
 for pat, label in [
     (r"onTapGesture\(.*location", "onTapGesture 带 location（iOS 17）"),

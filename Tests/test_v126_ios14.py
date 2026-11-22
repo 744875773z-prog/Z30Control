@@ -21,13 +21,16 @@ Yuan 2026-11-21 23:46：iPad mini 5（iPadOS 14.2，巨魔商店装的）打不�
    带位置的 onTapGesture。
    注意：LazyVGrid/GridItem 是 iOS 14 就有的，不算；UIGraphicsImageRenderer
    是 UIKit（iOS 10+），不算；.onTapGesture(count: 2) 不带位置，是 iOS 13
-   就有的，不算。
+   就有的，不算；.coordinateSpace(name:) 也是 iOS 13 就有的修饰器
+   （v1.0.37 竖条对齐用它量组芯片位置），不是 iOS 17 手势的
+   coordinateSpace 参数，别禁错。
 
 另外提醒过 Yuan：mini 5 是闪电口，有线直连得用苹果闪电转 USB 相机
 转换器（没实测过）；Wi-Fi 热点方式直接能用。
 """
 
 import os
+import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -71,11 +74,11 @@ def run():
     print("== 版本与部署目标 ==")
     check("deploymentTarget 降到 14.0",
           'deploymentTarget: "14.0"' in yml)
-    check("版本 1.0.36 / build 37（两处一致，v1.0.30 起由 test_v130_presets 再验一遍）",
-          "MARKETING_VERSION: 1.0.36" in yml
-          and "CURRENT_PROJECT_VERSION: 37" in yml
-          and "<string>1.0.36</string>" in plist
-          and "<string>37</string>" in plist)
+    check("版本 1.0.37 / build 38（两处一致，v1.0.30 起由 test_v130_presets 再验一遍）",
+          "MARKETING_VERSION: 1.0.37" in yml
+          and "CURRENT_PROJECT_VERSION: 38" in yml
+          and "<string>1.0.37</string>" in plist
+          and "<string>38</string>" in plist)
 
     print("== iOS 15+ API 全清掉或加兜底 ==")
     check("没有 confirmationDialog 调用",
@@ -89,13 +92,17 @@ def run():
                    "ViewThatFits", "GridRow", "LabeledContent", "Gauge(",
                    ".tint(", "role: .cancel", "role: .destructive",
                    "in: RoundedRectangle", "in: Capsule",
-                   ".overlay(alignment:", "coordinateSpace"]:
+                   ".overlay(alignment:"]:
         check(f"没有 {banned}", banned not in swift_src)
     check("没有新式 alert（标题+actions/message 闭包）",
           '.alert("' not in swift_src)
-    check("没有带位置的 onTapGesture（iOS 17 才有）",
-          "coordinateSpace" not in swift_src
-          and "onTapGesture { location" not in swift_src)
+    check("没有带位置的 onTapGesture（iOS 16/17 才有）",
+          "onTapGesture { location" not in swift_src
+          and "onTapGesture(coordinateSpace:" not in swift_src)
+    check(".coordinateSpace 只用 iOS 13 的 name: 形式（v1.0.37 竖条对齐）",
+          (lambda uses: bool(uses)
+           and all(u.startswith(".coordinateSpace(name:") for u in uses))(
+              re.findall(r"\.coordinateSpace\([^)]*\)", swift_src)))
     check("safeAreaInsets 只出现在 #available 兜底里",
           all("#available(iOS 15" in open(p, encoding="utf-8").read()
               for p in swift_files
