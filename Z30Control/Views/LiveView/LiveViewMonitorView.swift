@@ -415,6 +415,10 @@ public struct LiveViewMonitorView: View {
                     if !isCleanScreen {
                         previewFilterRail
                     }
+                    // v1.0.36：竖条被 VStack 默认居中顶到了屏幕正中间（v1.0.34
+                    // 删空状态时把 HStack 里撑宽的内容一起删了，只剩 42pt 宽的竖条）。
+                    // 加 Spacer 把 HStack 撑满宽，竖条贴到最左边缘；顶到最上方不变。
+                    Spacer()
                 }
 
                 if !isCleanScreen {
@@ -462,26 +466,42 @@ public struct LiveViewMonitorView: View {
     /// （展开的预设芯片变蓝，它所在的组名也变蓝）。容器全透明、没有黑底条；
     /// 点中哪个，取景画面实时套上该滤镜的样子；点「原图」恢复原样。
     /// 只改手机屏幕显示，不写相机、不动原图。
+    /// v1.0.36：v1.0.34 真机上点组看着像没展开——预设插在组芯片上方，
+    /// 插入点经常在可视区外面，光改状态不够。展开后用 ScrollViewReader
+    /// 滚回该组，让组内选项落进可视区；加动画让展开看得见。
     private var previewFilterRail: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 6) {
-                previewChip(id: nil, title: "原图")
-                ForEach(PictCtrlPresets.groups) { group in
-                    if railExpandedGroupTitle == group.title {
-                        ForEach(group.presets) { preset in
-                            previewChip(id: preset.id, title: preset.displayName)
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 6) {
+                    previewChip(id: nil, title: "原图")
+                    ForEach(PictCtrlPresets.groups) { group in
+                        if railExpandedGroupTitle == group.title {
+                            ForEach(group.presets) { preset in
+                                previewChip(id: preset.id, title: preset.displayName)
+                            }
                         }
-                    }
-                    railChip(title: group.title, selected: selectedPresetGroupTitle == group.title) {
-                        NikonTheme.triggerHaptic(style: .light)
-                        railExpandedGroupTitle = (railExpandedGroupTitle == group.title) ? nil : group.title
+                        railChip(title: group.title, selected: selectedPresetGroupTitle == group.title) {
+                            NikonTheme.triggerHaptic(style: .light)
+                            let expanding = railExpandedGroupTitle != group.title
+                            withAnimation {
+                                railExpandedGroupTitle = expanding ? group.title : nil
+                            }
+                            if expanding {
+                                DispatchQueue.main.async {
+                                    withAnimation {
+                                        proxy.scrollTo("rail-group-\(group.title)", anchor: .center)
+                                    }
+                                }
+                            }
+                        }
+                        .id("rail-group-\(group.title)")
                     }
                 }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
             }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 4)
+            .frame(width: 42)
         }
-        .frame(width: 42)
     }
 
     /// 磨砂玻璃背景（UIVisualEffectView 的 SwiftUI 包装，iOS 14 可用；
@@ -499,9 +519,12 @@ public struct LiveViewMonitorView: View {
         }
     }
 
-    /// 竖条芯片：磨砂玻璃质感底、黑字，选中蓝底白字。字顺时针转 90°（跟取景框
+    /// 竖条芯片：磨砂玻璃质感底、白字，选中蓝底白字。字顺时针转 90°（跟取景框
     /// 同一个方向），横握手机时横着读。芯片窄而高：宽 30pt，高随字数走。
-    /// v1.0.34：白底改磨砂玻璃；选中态在磨砂底上再盖一层半透明蓝，仍是蓝底白字。
+    /// v1.0.36：v1.0.34 用的 systemMaterialLight 太不透，看着像纯白底（用户
+    /// 2026-11-22 20:04 截图纠正）；改成最透的 systemUltraThinMaterialDark，
+    /// 深色取景画面透得出来才是真玻璃；未选中字改白字，不然看不清；再加一圈
+    /// 细白描边定住玻璃边缘。选中态在磨砂底上再盖一层半透明蓝，仍是蓝底白字。
     private func railChip(title: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
@@ -509,20 +532,26 @@ public struct LiveViewMonitorView: View {
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
                 .rotationEffect(.degrees(90))
-                .foregroundColor(selected ? .white : .black)
+                .foregroundColor(.white)
                 .frame(width: 30, height: railChipHeight(for: title))
                 .background(
                     ZStack {
-                        FrostedGlassView(style: .systemMaterialLight)
+                        FrostedGlassView(style: .systemUltraThinMaterialDark)
                         if selected {
                             NikonTheme.accentBlue.opacity(0.8)
                         }
                     }
                 )
                 .cornerRadius(6)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.white.opacity(0.35), lineWidth: 0.5)
+                )
                 .shadow(color: .black.opacity(0.25), radius: 2, x: 0, y: 1)
         }
         .buttonStyle(PlainButtonStyle())
+        // v1.0.36：点按区域明确成整个芯片矩形（转 90° 的字别把热区带偏）。
+        .contentShape(Rectangle())
     }
 
     /// 芯片高 = 字数 × 13pt + 16pt 上下留白（12pt 字，汉字宽 12pt，留点余量）。

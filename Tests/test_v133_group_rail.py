@@ -22,7 +22,7 @@
 6. 字仍顺时针转 90°（跟框一个方向）；芯片窄而高（宽 30pt、高随字数走）。
 7. 点选仍能触发预览（点预设立即应用、点原图清除）；预览只改显示，
    不写相机。
-8. 版本 1.0.35 / build 36 两处一致；iOS 14 护栏。
+8. 版本 1.0.36 / build 37 两处一致；iOS 14 护栏。
 """
 
 import os
@@ -80,7 +80,8 @@ check("组内预设插在该组芯片上方（先 ForEach presets，后 group �
       groups_block.find("ForEach(group.presets)")
       < groups_block.find("railChip(title: group.title"))
 check("点组切换展开/收起（同组再点就收起）",
-      "railExpandedGroupTitle = (railExpandedGroupTitle == group.title) ? nil : group.title" in rail)
+      "railExpandedGroupTitle = expanding ? group.title : nil" in VIEW
+      and "let expanding = railExpandedGroupTitle != group.title" in VIEW)
 check("模型里还是 11 组、121 套",
       len(model_groups) == 11 and sum(model_groups.values()) == 121,
       f"{len(model_groups)} 组、{sum(model_groups.values())} 套")
@@ -101,13 +102,13 @@ check("预设芯片按选中 id 标蓝",
 check("有 FrostedGlassView（UIVisualEffectView 包装）",
       "private struct FrostedGlassView: UIViewRepresentable" in VIEW
       and "UIVisualEffectView(effect: UIBlurEffect(style: style))" in VIEW)
-check("芯片底用磨砂玻璃（systemMaterialLight）",
-      "FrostedGlassView(style: .systemMaterialLight)" in rail)
+check("芯片底用磨砂玻璃（v1.0.36 改最透的 systemUltraThinMaterialDark）",
+      "FrostedGlassView(style: .systemUltraThinMaterialDark)" in rail)
 check("未选中不再是纯白底",
       ".background(selected ? NikonTheme.accentBlue : Color.white)" not in rail)
 check("选中在磨砂底上盖半透明蓝（仍是蓝底白字）",
       "NikonTheme.accentBlue.opacity(0.8)" in rail
-      and ".foregroundColor(selected ? .white : .black)" in rail)
+      and ".foregroundColor(.white)" in rail)
 check("芯片圆角 6", ".cornerRadius(6)" in rail)
 check("竖条宽 42 贴左边缘", ".frame(width: 42)" in rail)
 check("竖条容器没有任何黑底 .background",
@@ -162,9 +163,9 @@ for needle, label in [
 # ---------------------------------------------------------------- 8. 版本 + iOS 14 护栏
 YML = read("project.yml")
 PLIST = read("Z30Control/Info.plist")
-check("版本 1.0.35 / build 36 两处一致",
-      "MARKETING_VERSION: 1.0.35" in YML and "CURRENT_PROJECT_VERSION: 36" in YML and
-      "<string>1.0.35</string>" in PLIST and "<string>36</string>" in PLIST)
+check("版本 1.0.36 / build 37 两处一致",
+      "MARKETING_VERSION: 1.0.36" in YML and "CURRENT_PROJECT_VERSION: 37" in YML and
+      "<string>1.0.36</string>" in PLIST and "<string>37</string>" in PLIST)
 check("部署目标还是 14.0", 'deploymentTarget: "14.0"' in YML)
 for pat, label in [
     (r"onTapGesture\(.*location", "onTapGesture 带 location（iOS 17）"),
