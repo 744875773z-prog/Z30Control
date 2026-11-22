@@ -12,20 +12,23 @@ import SwiftUI
 public enum MainTabItem: Int, CaseIterable {
     case control = 0      // 控制
     case liveView = 1     // 实时取景
-    case gallery = 2      // 图库
-    
+    case pictCtrl = 2     // 机身滤镜（v1.0.28：写滤镜进相机 C1–C9）
+    case gallery = 3      // 图库
+
     var title: String {
         switch self {
         case .control: return "控制"
         case .liveView: return "实时取景"
+        case .pictCtrl: return "机身滤镜"
         case .gallery: return "图库"
         }
     }
-    
+
     var iconName: String {
         switch self {
         case .control: return "camera.fill"
         case .liveView: return "viewfinder"
+        case .pictCtrl: return "wand.and.stars"
         case .gallery: return "photo.stack.fill"
         }
     }
@@ -58,6 +61,8 @@ public struct RootTabView: View {
                         LiveViewMonitorView(cameraState: cameraState, onExitToControl: {
                             selectedTab = .control
                         })
+                    case .pictCtrl:
+                        PictCtrlView()
                     case .gallery:
                         CameraGalleryView()
                     }

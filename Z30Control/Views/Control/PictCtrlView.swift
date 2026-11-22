@@ -11,7 +11,6 @@ import SwiftUI
 
 public struct PictCtrlView: View {
     @ObservedObject var service = PictCtrlService.shared
-    @Environment(\.presentationMode) private var presentationMode
 
     @State private var selectedSlot: PictCtrlSlot? = nil
     @State private var pendingPreset: PictCtrlPreset? = nil
@@ -47,9 +46,6 @@ public struct PictCtrlView: View {
             .navigationTitle("机身滤镜")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("关闭") { presentationMode.wrappedValue.dismiss() }
-                }
                 ToolbarItem(placement: .primaryAction) {
                     Button("重新读取") { refresh() }
                         .disabled(service.isReadingSlots || !service.isConnected)
@@ -91,7 +87,14 @@ public struct PictCtrlView: View {
         }
     }
 
-    // MARK: - 槽位
+    // MARK: - 槽位九宫格（用户发的参考样式：3×3 卡片，槽名 + 状态）
+    // 九个槽一视同仁：不给 C9 加任何特殊标记（没有“推荐”角标、高亮底色）。
+
+    private let gridColumns = [
+        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12),
+    ]
 
     private var slotSection: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -103,8 +106,10 @@ public struct PictCtrlView: View {
                     .font(.system(size: 13))
                     .foregroundColor(NikonTheme.textSecondary)
             }
-            ForEach(PictCtrlSlot.allCases) { slot in
-                slotRow(slot)
+            LazyVGrid(columns: gridColumns, spacing: 12) {
+                ForEach(PictCtrlSlot.allCases) { slot in
+                    slotCard(slot)
+                }
             }
             if service.isReadingSlots {
                 Text("正在读 C1–C9…")
@@ -118,7 +123,7 @@ public struct PictCtrlView: View {
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(NikonTheme.borderDim, lineWidth: 1.5))
     }
 
-    private func slotRow(_ slot: PictCtrlSlot) -> some View {
+    private func slotCard(_ slot: PictCtrlSlot) -> some View {
         let content = service.slotContents[slot]
         let selectable: Bool = {
             guard service.isConnected, let content = content else { return false }
@@ -127,37 +132,28 @@ public struct PictCtrlView: View {
             case .paramsOnly, .unknown: return false
             }
         }()
-        let isParamsOnly: Bool = {
-            if case .paramsOnly = content { return true }
-            return false
-        }()
+        let isSelected = selectedSlot == slot
         return Button(action: {
             if selectable { selectedSlot = slot }
         }) {
-            HStack {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(slot.label)
-                    .font(.system(size: 15, weight: .bold, design: .monospaced))
+                    .font(.system(size: 20, weight: .bold))
                     .foregroundColor(NikonTheme.textPrimary)
-                    .frame(width: 30, alignment: .leading)
                 Text(slotStateText(content))
                     .font(.system(size: 13))
-                    .foregroundColor(isParamsOnly ? NikonTheme.textTertiary : NikonTheme.textSecondary)
-                Spacer()
-                if selectedSlot == slot {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(NikonTheme.accentBlue)
-                } else if isParamsOnly {
-                    Text("不碰")
-                        .font(.system(size: 11, weight: .bold))
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
-                        .background(NikonTheme.bgPure)
-                        .foregroundColor(NikonTheme.textTertiary)
-                        .cornerRadius(6)
-                }
+                    .foregroundColor(NikonTheme.textSecondary)
+                    .lineLimit(1)
             }
-            .padding(.vertical, 4)
-            .contentShape(Rectangle())
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(Color(red: 0.97, green: 0.95, blue: 0.91))
+            .cornerRadius(18)
+            .overlay(
+                RoundedRectangle(cornerRadius: 18)
+                    .stroke(isSelected ? NikonTheme.accentBlue : NikonTheme.borderDim,
+                            lineWidth: isSelected ? 2 : 1)
+            )
         }
         .buttonStyle(PlainButtonStyle())
         .disabled(!selectable)
@@ -165,12 +161,12 @@ public struct PictCtrlView: View {
     }
 
     private func slotStateText(_ content: PictCtrlPayload.SlotContent?) -> String {
-        guard let content = content else { return "还没读到" }
+        guard let content = content else { return "未读取" }
         switch content {
         case .empty: return "空"
-        case .paramsOnly: return "相机菜单里建的，只有参数"
-        case .full(let name): return name.isEmpty ? "已有配方" : "已有配方「\(name)」"
-        case .unknown(let bytes): return "状态不明（\(bytes) 字节）"
+        case .paramsOnly: return "仅参数"
+        case .full(let name): return name.isEmpty ? "已有配方" : name
+        case .unknown: return "状态不明"
         }
     }
 
@@ -251,12 +247,9 @@ public struct PictCtrlView: View {
 
     private func refresh() {
         service.refreshSlots { _ in
+            // 默认选中第一个空槽；没有空槽就不预选，等用户自己点——九个槽一视同仁。
             if selectedSlot == nil {
-                if let firstEmpty = PictCtrlSlot.allCases.first(where: { service.slotContents[$0] == .empty }) {
-                    selectedSlot = firstEmpty
-                } else {
-                    selectedSlot = .c9
-                }
+                selectedSlot = PictCtrlSlot.allCases.first(where: { service.slotContents[$0] == .empty })
             }
         }
     }

@@ -22,8 +22,6 @@ public struct ControlDashboardView: View {
     // v1.0.8：连接向导入口。向导页（选 USB/Wi-Fi/相机热点、扫局域网、手动输 IP）
     // 之前在代码里存在，但全 App 没有任何按钮能打开它，用户根本找不到 Wi-Fi 选择。
     @State private var showingConnectionWizard = false
-    // v1.0.28：机身滤镜入口（写滤镜进相机 C1–C9）。
-    @State private var showingPictCtrl = false
     
     public init(cameraState: CameraState, onSwitchToLiveView: (() -> Void)? = nil) {
         self.cameraState = cameraState
@@ -49,9 +47,6 @@ public struct ControlDashboardView: View {
                 if isDeviceConnected {
                     hardwareStorageAndBatteryCards
                         .transition(.move(edge: .top).combined(with: .opacity))
-                    // v1.0.28：机身滤镜入口——8 套滤镜写进相机 C1–C9，直出带风格
-                    pictCtrlEntryCard
-                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
                 
                 Spacer(minLength: 110) // 预留底部导航栏
@@ -69,9 +64,6 @@ public struct ControlDashboardView: View {
         }
         .sheet(isPresented: $showingConnectionWizard) {
             ConnectionWizardView()
-        }
-        .sheet(isPresented: $showingPictCtrl) {
-            PictCtrlView()
         }
     }
     
@@ -382,33 +374,6 @@ public struct ControlDashboardView: View {
         }
     }
     
-    // MARK: - v1.0.28：机身滤镜入口卡片
-    private var pictCtrlEntryCard: some View {
-        Button(action: { showingPictCtrl = true }) {
-            HStack {
-                Image(systemName: "wand.and.stars")
-                    .foregroundColor(NikonTheme.accentBlue)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("机身滤镜")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(NikonTheme.textPrimary)
-                    Text("8 套滤镜写进相机 C1–C9，直出带风格，不用连手机")
-                        .font(.system(size: 12))
-                        .foregroundColor(NikonTheme.textSecondary)
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .foregroundColor(NikonTheme.textTertiary)
-            }
-            .padding(18)
-            .background(NikonTheme.surfaceCard)
-            .cornerRadius(18)
-            .overlay(RoundedRectangle(cornerRadius: 18).stroke(NikonTheme.borderDim, lineWidth: 1.5))
-            .shadow(color: Color.black.opacity(0.03), radius: 10, x: 0, y: 3)
-        }
-        .buttonStyle(PlainButtonStyle())
-    }
-
     // MARK: - USB-C 线连与权限指引弹窗
     private var wiredGuideSheet: some View {
         NavigationView {

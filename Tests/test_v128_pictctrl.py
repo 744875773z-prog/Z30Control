@@ -240,8 +240,22 @@ check("project.yml 没有 info: 块（忽略注释行）",
       not any(re.match(r"\s*info\s*:", ln) for ln in YML.splitlines()
               if not ln.strip().startswith("#")))
 CTRL = read("Z30Control/Views/Control/ControlDashboardView.swift")
-check("控制页有机身滤镜入口卡片", "pictCtrlEntryCard" in CTRL and "PictCtrlView()" in CTRL)
-check("入口只在连接后显示", "showingPictCtrl" in CTRL)
+check("控制页不再挂机身滤镜入口（入口已移到标签页）",
+      "PictCtrlView()" not in CTRL and "pictCtrlEntryCard" not in CTRL)
+TAB = read("Z30Control/App/RootTabView.swift")
+check("标签页：机身滤镜在实时取景和图库之间",
+      "case pictCtrl = 2" in TAB and "case gallery = 3" in TAB)
+check("标签页标题「机身滤镜」", 'case .pictCtrl: return "机身滤镜"' in TAB)
+check("标签页分发 PictCtrlView", "case .pictCtrl:\n                        PictCtrlView()" in TAB)
+VIEW = read("Z30Control/Views/Control/PictCtrlView.swift")
+check("槽位是 3×3 九宫格（LazyVGrid，3 列）",
+      "LazyVGrid(columns: gridColumns" in VIEW and VIEW.count("GridItem(.flexible()") == 3)
+check("九个槽一视同仁：可见文案里没有“推荐”",
+      "推荐" not in "\n".join(ln.split("//")[0] for ln in VIEW.splitlines()))
+check("未读显示“未读取”", 'return "未读取"' in VIEW)
+check("空槽显示“空”", 'return "空"' in VIEW)
+check("仅参数槽显示“仅参数”", 'return "仅参数"' in VIEW)
+check("默认只选第一个空槽，不预选 C9", "selectedSlot = .c9" not in VIEW)
 check("v1.0.27 NP3 文件还在",
       os.path.exists(os.path.join(ROOT, "Z30Control/Models/NP3PictureControl.swift")) and
       os.path.exists(os.path.join(ROOT, "Z30Control/Views/Gallery/NP3FilterView.swift")))
