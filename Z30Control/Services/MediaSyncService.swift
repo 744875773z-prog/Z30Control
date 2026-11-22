@@ -345,6 +345,12 @@ public final class MediaSyncService: ObservableObject {
     }
     
     /// JPEG/视频存入系统相册；NEF 无法直接写入相册，存到 App 文稿目录
+    /// v1.0.27：NP3 滤镜版存相册——复用同一条 PHPhotoLibrary 写入路径，
+    /// 文件名必须是 .jpg 才走相册分支。
+    public func saveFilteredImageData(_ data: Data, filename: String, completion: @escaping (Bool) -> Void) {
+        saveDataToPhotosOrFiles(data, filename: filename, completion: completion)
+    }
+
     private func saveDataToPhotosOrFiles(_ data: Data, filename: String, completion: @escaping (Bool) -> Void) {
         let ext = (filename as NSString).pathExtension.lowercased()
         if ext == "nef" {

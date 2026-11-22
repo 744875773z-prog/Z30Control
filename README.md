@@ -2,6 +2,14 @@
 
 一款专为**尼康 Z30（Nikon Z30）**设计的专业级 iOS 相机控制、3D LUT 胶片监看、无线相册与“按相机保护键自动速传”应用程序。
 
+## v1.0.27 新增：导入 .NP3 文件，在图库照片上当滤镜套用
+
+Yuan 2026-11-22 16:12：想把尼康云创上的配方下载下来，直接当软件里的滤镜。云创没有公开接口、Z30 也不在能下载的那 5 台相机里，但配方文件本身就是 .NP3，可以从公开渠道拿文件。先做试用版：只做“用户自己导入 .NP3 文件 → 在图库照片上预览/套用”，不内置任何配方（版权原因——配方是各作者的创作，免费下载不等于可以打包分发）。
+
+这版：新建 NP3PictureControl.swift（解析器，ssssota/nikon-flexible-color-picture-control 的 deserialize.ts 按偏移逐项移植，名字/锐化/清晰度/对比/高光/暗部/白场/黑场/饱和/8 色 Color Blender/3 区 Color Grading/257 点色调曲线全解析，文件头验 "NCP"）、NP3LUTRenderer.swift（参数烤成 32³ 3D LUT 走 CIColorCube 套用，锐化/清晰度这次不渲，只做色彩）、NP3RecipeStore.swift（配方存 Documents/NP3Recipes，重启还在；只接受 .np3 后缀的系统文件选择器）、NP3FilterView.swift（详情页“滤镜”按钮点开：配方列表 + 导入 + 预览 + 保存滤镜版，保存复用 MediaSyncService 的相册写入路径）。解析失败给人话提示（“可能不是 Flexible 配方”），不静默失败。入口从图库照片详情页进（原图下得来才能点），不是只存在代码里的死入口。
+
+渲染是近似的：尼康机内色彩管线是私有的，App 里渲出来只能接近相机直出，不能 100% 一样。Tests/test_v127_np3.py（88 项）验证：解析器输出与 NP3-Modern-Chrome-Std-parsed.json 逐字段一致；同一套渲染数学在合成色卡上方向与 demo 图一致（绿块 G-R 大幅下降、反差上升、中间灰偏暖）。Swift 解析器在真机上的表现、导入流程、保存结果，等 Yuan 在 iPhone/mini 5 上实测。
+
 ## v1.0.26 新增：取景网格 8 选 1 + iPad mini 5（iPadOS 14.2）能打开
 
 Yuan 2026-11-21 23:38：网格就这一种太单一了，都加上去，点网格可以选择这几个网格或者是无网格。

@@ -1,0 +1,74 @@
+{
+  "name": "Modern Chrome Std",
+  "sharpning": 2,
+  "midRangeSharpning": 1,
+  "clarity": 0.25,
+  "contrast": 40,
+  "highlights": -5,
+  "shadows": -20,
+  "whiteLevel": 5,
+  "blackLevel": -40,
+  "saturation": 5,
+  "colorBlender": {
+    "red": {
+      "hue": -4,
+      "chroma": -15,
+      "brightness": 10
+    },
+    "orange": {
+      "hue": 10,
+      "chroma": -5,
+      "brightness": 5
+    },
+    "yellow": {
+      "hue": -20,
+      "chroma": 10,
+      "brightness": -5
+    },
+    "green": {
+      "hue": -4,
+      "chroma": -45,
+      "brightness": -22
+    },
+    "cyan": {
+      "hue": 16,
+      "chroma": 30,
+      "brightness": -20
+    },
+    "blue": {
+      "hue": -32,
+      "chroma": -20,
+      "brightness": 5
+    },
+    "purple": {
+      "hue": 5,
+      "chroma": -35,
+      "brightness": 35
+    },
+    "magenta": {
+      "hue": 5,
+      "chroma": -24,
+      "brightness": 9
+    }
+  },
+  "colorGrading": {
+    "highlights": {
+      "hue": 0,
+      "chroma": 0,
+      "brightness": 0
+    },
+    "midTone": {
+      "hue": 42,
+      "chroma": 12,
+      "brightness": 0
+    },
+    "shadows": {
+      "hue": 0,
+      "chroma": 0,
+      "brightness": 0
+    },
+    "blending": 75,
+    "balance": 0
+  },
+  "comment": "serbanjpg.com / @srbn.jpg"
+}

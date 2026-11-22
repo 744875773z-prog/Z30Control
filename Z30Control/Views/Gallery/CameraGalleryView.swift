@@ -470,6 +470,9 @@ public struct PhotoExportSheet: View {
     @State private var rotation: Int = 0
     @State private var scale: CGFloat = 1.0
     @State private var lastScale: CGFloat = 1.0
+    // v1.0.27：NP3 滤镜（详情页入口 → NP3FilterView）
+    @State private var showNP3Filter = false
+    @State private var filterSourceImage: UIImage?
 
     public init(item: CameraMediaItem) {
         self.item = item
@@ -564,6 +567,33 @@ public struct PhotoExportSheet: View {
                     .overlay(RoundedRectangle(cornerRadius: 12).stroke(NikonTheme.borderDim, lineWidth: 1))
                 }
                 .padding(.horizontal, 16)
+
+                // v1.0.27：滤镜——点开 NP3 配方列表，在这张照片上预览/套用。
+                // 入口就在详情页（原图下得来才能点），不是只存在代码里的死入口。
+                Button(action: {
+                    NikonTheme.triggerHaptic(style: .light)
+                    filterSourceImage = fullImage
+                    showNP3Filter = true
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "slider.horizontal.3")
+                        Text("滤镜（导入 .NP3 配方）")
+                            .font(.system(size: 14, weight: .bold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .background(NikonTheme.bgSubtle)
+                    .foregroundColor(NikonTheme.textPrimary)
+                    .cornerRadius(12)
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(NikonTheme.borderDim, lineWidth: 1))
+                }
+                .padding(.horizontal, 16)
+                .disabled(fullImage == nil)
+                .sheet(isPresented: $showNP3Filter) {
+                    if let sourceImage = filterSourceImage {
+                        NP3FilterView(item: item, originalImage: sourceImage)
+                    }
+                }
 
                 Text("保存和分享在图库总页面：右上角“选择”，勾上照片后批量保存/分享。")
                     .font(.system(size: 12))
