@@ -19,15 +19,15 @@ public struct CameraGalleryView: View {
     @State private var selectedFilenames: Set<String> = []
     @State private var batchSaving = false
     @State private var batchProgress: (Int, Int) = (0, 0)
-    @State private var batchResult: (Int, Int)?
-    @State private var showBatchResult = false
     @State private var batchShare: ShareBatch?
     @State private var isBatchSharing = false
     // v1.0.19：批量删除机内照片（删了就真没了，先弹确认框）
     @State private var batchDeleting = false
-    @State private var showDeleteConfirm = false
-    @State private var batchDeleteResult: (Int, Int)?
-    @State private var showBatchDeleteResult = false
+    // v1.0.29：一个图库页只能挂一个 alert——之前三个 .alert(isPresented:) 挂在
+    // 同一个 VStack 上，SwiftUI 只认其中一个，删除确认框弹不出来，删除看着像
+    // 失效（删照片的 PTP 代码本身没动过）。改成一个 enum 状态 + 单个 .alert(item:)，
+    // 保存结果 / 删除确认 / 删除结果三种提示共用一个入口。
+    @State private var activeAlert: GalleryAlert?
     
     public init() {}
     
@@ -132,7 +132,7 @@ public struct CameraGalleryView: View {
                     Spacer()
                     Button("删除") {
                         NikonTheme.triggerHaptic(style: .light)
-                        showDeleteConfirm = true
+                        activeAlert = .deleteConfirm(count: selectedFilenames.count)
                     }
                     .font(.system(size: 14, weight: .bold))
                     .foregroundColor(.red)
@@ -183,37 +183,32 @@ public struct CameraGalleryView: View {
         .sheet(item: $batchShare) { batch in
             ActivityShareView(activityItems: batch.urls)
         }
-        // v1.0.26：新式 alert（带 actions/message 闭包）是 iOS 15 才有的；
-        // 14 上用老式 Alert。
-        .alert(isPresented: $showBatchResult) {
-            Alert(
-                title: Text("保存完成"),
-                message: Text(batchResult.map { r in
-                    r.0 == r.1 ? "已存入手机 \(r.0) 张。" : "已存入手机 \(r.0) 张，失败 \(r.1 - r.0) 张（相机连接可能断了，可以再选一次）。"
-                } ?? ""),
-                dismissButton: .default(Text("好的")) { batchResult = nil }
-            )
-        }
-        // v1.0.19：批量删除确认 + 结果汇总（删了就真没了）
-        // v1.0.26：新式 alert 是 iOS 15 才有的；14 上用老式 Alert。
-        .alert(isPresented: $showDeleteConfirm) {
-            Alert(
-                title: Text("删除照片"),
-                message: Text("将从相机存储卡中永久删除选中的 \(selectedFilenames.count) 张照片，无法恢复。"),
-                primaryButton: .destructive(Text("删除 \(selectedFilenames.count) 张")) {
-                    deleteSelected()
-                },
-                secondaryButton: .cancel(Text("取消"))
-            )
-        }
-        .alert(isPresented: $showBatchDeleteResult) {
-            Alert(
-                title: Text("删除完成"),
-                message: Text(batchDeleteResult.map { r in
-                    r.0 == r.1 ? "已删除 \(r.0) 张。" : "已删除 \(r.0) 张，失败 \(r.1 - r.0) 张（句柄映射表可能还没建好，或相机断了，可以再选一次）。"
-                } ?? ""),
-                dismissButton: .default(Text("好的")) { batchDeleteResult = nil }
-            )
+        // v1.0.29：三种提示共用一个 .alert 入口（见顶部 activeAlert 的注释）。
+        // 老式 Alert 写法，iOS 14 能用；.alert(item:) 是 iOS 13 就有的 API。
+        .alert(item: $activeAlert) { alert in
+            switch alert {
+            case .saveResult(let succeeded, let total):
+                return Alert(
+                    title: Text("保存完成"),
+                    message: Text(succeeded == total ? "已存入手机 \(succeeded) 张。" : "已存入手机 \(succeeded) 张，失败 \(total - succeeded) 张（相机连接可能断了，可以再选一次）。"),
+                    dismissButton: .default(Text("好的"))
+                )
+            case .deleteConfirm(let count):
+                return Alert(
+                    title: Text("删除照片"),
+                    message: Text("将从相机存储卡中永久删除选中的 \(count) 张照片，无法恢复。"),
+                    primaryButton: .destructive(Text("删除 \(count) 张")) {
+                        deleteSelected()
+                    },
+                    secondaryButton: .cancel(Text("取消"))
+                )
+            case .deleteResult(let succeeded, let total):
+                return Alert(
+                    title: Text("删除完成"),
+                    message: Text(succeeded == total ? "已删除 \(succeeded) 张。" : "已删除 \(succeeded) 张，失败 \(total - succeeded) 张（句柄映射表可能还没建好，或相机断了，可以再选一次）。"),
+                    dismissButton: .default(Text("好的"))
+                )
+            }
         }
     }
     
@@ -245,8 +240,7 @@ public struct CameraGalleryView: View {
         }, completion: { succeeded, total in
             DispatchQueue.main.async {
                 self.batchSaving = false
-                self.batchResult = (succeeded, total)
-                self.showBatchResult = true
+                self.activeAlert = .saveResult(succeeded: succeeded, total: total)
                 if succeeded == total {
                     self.isSelecting = false
                     self.selectedFilenames.removeAll()
@@ -285,8 +279,7 @@ public struct CameraGalleryView: View {
         }, completion: { succeeded, total in
             DispatchQueue.main.async {
                 self.batchDeleting = false
-                self.batchDeleteResult = (succeeded, total)
-                self.showBatchDeleteResult = true
+                self.activeAlert = .deleteResult(succeeded: succeeded, total: total)
                 if succeeded == total {
                     self.isSelecting = false
                     self.selectedFilenames.removeAll()
@@ -443,6 +436,23 @@ public struct CameraGalleryView: View {
     }
 }
 
+/// v1.0.29：图库页唯一的 alert 状态（三种提示共用一个 .alert(item:) 入口）。
+/// 一个 View 上挂多个 .alert(isPresented:) 时 SwiftUI 只认其中一个，
+/// 之前删除确认框就是这么被盖掉的。
+private enum GalleryAlert: Identifiable {
+    case saveResult(succeeded: Int, total: Int)
+    case deleteConfirm(count: Int)
+    case deleteResult(succeeded: Int, total: Int)
+
+    var id: String {
+        switch self {
+        case .saveResult: return "saveResult"
+        case .deleteConfirm: return "deleteConfirm"
+        case .deleteResult: return "deleteResult"
+        }
+    }
+}
+
 /// v1.0.19：照片显示方向固定——点开一张图后转横/转竖，记下来，
 /// 切页面、退后台、重启 App 都不变，直到再点旋转。存在 UserDefaults，
 /// 按文件名记（DSC_xxxx 不重名）。
@@ -470,9 +480,6 @@ public struct PhotoExportSheet: View {
     @State private var rotation: Int = 0
     @State private var scale: CGFloat = 1.0
     @State private var lastScale: CGFloat = 1.0
-    // v1.0.27：NP3 滤镜（详情页入口 → NP3FilterView）
-    @State private var showNP3Filter = false
-    @State private var filterSourceImage: UIImage?
 
     public init(item: CameraMediaItem) {
         self.item = item
@@ -567,33 +574,6 @@ public struct PhotoExportSheet: View {
                     .overlay(RoundedRectangle(cornerRadius: 12).stroke(NikonTheme.borderDim, lineWidth: 1))
                 }
                 .padding(.horizontal, 16)
-
-                // v1.0.27：滤镜——点开 NP3 配方列表，在这张照片上预览/套用。
-                // 入口就在详情页（原图下得来才能点），不是只存在代码里的死入口。
-                Button(action: {
-                    NikonTheme.triggerHaptic(style: .light)
-                    filterSourceImage = fullImage
-                    showNP3Filter = true
-                }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "slider.horizontal.3")
-                        Text("滤镜（导入 .NP3 配方）")
-                            .font(.system(size: 14, weight: .bold))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 44)
-                    .background(NikonTheme.bgSubtle)
-                    .foregroundColor(NikonTheme.textPrimary)
-                    .cornerRadius(12)
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(NikonTheme.borderDim, lineWidth: 1))
-                }
-                .padding(.horizontal, 16)
-                .disabled(fullImage == nil)
-                .sheet(isPresented: $showNP3Filter) {
-                    if let sourceImage = filterSourceImage {
-                        NP3FilterView(item: item, originalImage: sourceImage)
-                    }
-                }
 
                 Text("保存和分享在图库总页面：右上角“选择”，勾上照片后批量保存/分享。")
                     .font(.system(size: 12))

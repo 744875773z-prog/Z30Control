@@ -90,8 +90,10 @@ def run():
           "fastTransfer" not in tabs)
     check("Tab 切换里没有 FastTransferView()",
           "FastTransferView()" not in tabs)
-    check("只剩 3 个 Tab（控制/实时取景/图库）",
-          "case gallery = 2" in tabs and "case control = 0" in tabs and "case liveView = 1" in tabs)
+    # v1.0.28 起 4 个 Tab（多了机身滤镜）；v1.0.29 沿用
+    check("4 个 Tab（控制/实时取景/机身滤镜/图库）",
+          "case gallery = 3" in tabs and "case control = 0" in tabs and "case liveView = 1" in tabs
+          and "case pictCtrl = 2" in tabs)
 
     print("== UsbCameraManager：不再自动下载/自动存相册 ==")
     check("sessionCapturedPhotos 已删", "sessionCapturedPhotos" not in usb)
@@ -135,14 +137,15 @@ def run():
           "保存到相册" in gallery and '"分享"' in gallery and '"取消"' in gallery)
     check("批量保存走 saveItems", "syncService.saveItems" in gallery)
     check("批量分享走 downloadItemsData", "syncService.downloadItemsData" in gallery)
-    check("批量结果有汇总提示", "showBatchResult" in gallery and "已存入手机" in gallery)
+    # v1.0.29：三种提示共用一个 .alert(item:)（三个 .alert 会盖掉删除确认框）
+    check("批量结果有汇总提示", "activeAlert = .saveResult" in gallery and "已存入手机" in gallery)
     check("多选分享用 ShareBatch", "ShareBatch" in gallery)
     check("GalleryThumbImage 模块内可见",
           "struct GalleryThumbImage: View" in gallery and "private struct GalleryThumbImage" not in gallery)
     check("多选条有删除按钮（v1.0.19）",
-          '"删除"' in gallery and "showDeleteConfirm" in gallery)
+          '"删除"' in gallery and "activeAlert = .deleteConfirm" in gallery)
     check("批量删除走 deleteItems（确认框 + 汇总）",
-          "syncService.deleteItems" in gallery and "showBatchDeleteResult" in gallery)
+          "syncService.deleteItems" in gallery and "activeAlert = .deleteResult" in gallery)
 
     print("== 取景页：拍摄条/AF-ON/滤镜都删了（v1.0.19）==")
     check("本次拍摄条已删", "recentShotsStrip" not in live and "sessionItems" not in live)

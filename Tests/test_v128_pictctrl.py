@@ -13,8 +13,8 @@
 5. 红线：App 里没有任何 0x90CE（删槽指令）的代码调用——只允许出现在注释里；
    没有 DelCstPicCtrl / deletePictCtrl 之类的删除入口。
 6. iOS 14 护栏：新文件里没有 iOS 15+ API。
-7. 版本 1.0.28 / build 29 两处一致；控制页有真实可达的机身滤镜入口；
-   v1.0.27 的 NP3 文件原样还在。
+7. 版本 1.0.29 / build 30 两处一致；控制页有真实可达的机身滤镜入口；
+   v1.0.29 起 NP3 图库滤镜已移除（文件不在，见 test_v129）。
 """
 
 import base64
@@ -233,9 +233,9 @@ for rel in NEW_FILES:
 # ---------------------------------------------------------------- 8. 版本 + 入口 + NP3 不动
 YML = read("project.yml")
 PLIST = read("Z30Control/Info.plist")
-check("版本 1.0.28 / build 29 两处一致",
-      "MARKETING_VERSION: 1.0.28" in YML and "CURRENT_PROJECT_VERSION: 29" in YML and
-      "<string>1.0.28</string>" in PLIST and "<string>29</string>" in PLIST)
+check("版本 1.0.29 / build 30 两处一致",
+      "MARKETING_VERSION: 1.0.29" in YML and "CURRENT_PROJECT_VERSION: 30" in YML and
+      "<string>1.0.29</string>" in PLIST and "<string>30</string>" in PLIST)
 check("project.yml 没有 info: 块（忽略注释行）",
       not any(re.match(r"\s*info\s*:", ln) for ln in YML.splitlines()
               if not ln.strip().startswith("#")))
@@ -256,9 +256,11 @@ check("未读显示“未读取”", 'return "未读取"' in VIEW)
 check("空槽显示“空”", 'return "空"' in VIEW)
 check("仅参数槽显示“仅参数”", 'return "仅参数"' in VIEW)
 check("默认只选第一个空槽，不预选 C9", "selectedSlot = .c9" not in VIEW)
-check("v1.0.27 NP3 文件还在",
-      os.path.exists(os.path.join(ROOT, "Z30Control/Models/NP3PictureControl.swift")) and
-      os.path.exists(os.path.join(ROOT, "Z30Control/Views/Gallery/NP3FilterView.swift")))
+check("v1.0.29 NP3 图库滤镜已移除（文件 + 入口都不在）",
+      not os.path.exists(os.path.join(ROOT, "Z30Control/Models/NP3PictureControl.swift")) and
+      not os.path.exists(os.path.join(ROOT, "Z30Control/Views/Gallery/NP3FilterView.swift")) and
+      not os.path.exists(os.path.join(ROOT, "Z30Control/Services/NP3RecipeStore.swift")) and
+      not os.path.exists(os.path.join(ROOT, "Z30Control/Services/NP3LUTRenderer.swift")))
 
 # ---------------------------------------------------------------- 汇总
 failed = [n for n, ok, _ in CHECKS if not ok]

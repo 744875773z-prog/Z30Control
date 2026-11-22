@@ -110,11 +110,12 @@ def run():
           "pinnedCapturedItems.removeAll" in media and "thumbCache.removeValue" in media)
     check("句柄不够时等映射表建好再删",
           "handleMapWaiters" in media)
+    # v1.0.29：确认框改成单 alert 的 enum 分支（三个 .alert 挂一个 View 会盖掉删除确认框）
     check("图库多选条有删除按钮 + 确认框",
-          '"删除"' in gallery and "showDeleteConfirm" in gallery
+          '"删除"' in gallery and "activeAlert = .deleteConfirm" in gallery
           and "永久删除" in gallery)
     check("删除结果有汇总提示",
-          "showBatchDeleteResult" in gallery and "已删除" in gallery)
+          "activeAlert = .deleteResult" in gallery and "已删除" in gallery)
 
     print("== 详情页直接看原图，保存/分享只在总页面 ==")
     check("详情页下原图显示",
