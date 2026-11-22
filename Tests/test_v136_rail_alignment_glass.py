@@ -1,8 +1,8 @@
 """v1.0.36 回归：取景页滤镜竖条回到最左边缘 + 芯片换成真透的磨砂玻璃。
 
-v1.0.37：展开方式改成横向第二列（见 test_v137）——组内预设不再插进
-同一列，ScrollViewReader 滚回也不需要了；本套件的展开断言已同步改
-成横向展开，其他检查点不变。
+v1.0.38：展开方式改成网格一次全显（见 test_v138）——组内预设不再插进
+同一列、也不再是竖条右侧单列，对齐机制随第二列一起删了；本套件的
+展开断言已同步改成网格展开，其他检查点不变。
 
 用户 2026-11-22 20:04 对着 v1.0.34 截图纠正：“除了顶到顶了，其他没有
 符合的地方”——从截图看两处实锤：
@@ -17,11 +17,11 @@ v1.0.37：展开方式改成横向第二列（见 test_v137）——组内预设
    玻璃边缘；选中仍是半透明蓝盖层 + 白字。
 
 另复核（只读代码 + 本测试断言，真机仍留给用户）：
-3. 点组展开的逻辑还在（v1.0.37 改横向：预设在竖条右侧第二列，不再
-   插进同一列；一次只展开一组，railExpandedGroupTitle 单值）。
+3. 点组展开的逻辑还在（v1.0.38 改网格：预设在竖条右侧网格一次全显，
+   不再插进同一列；一次只展开一组，railExpandedGroupTitle 单值）。
 4. 字仍顺时针转 90°（跟框一个方向）；顶到最上方不变；容器全透明，
    不要黑底条。
-5. 版本 1.0.37 / build 38 两处一致；iOS 14 护栏。
+5. 版本 1.0.38 / build 39 两处一致；iOS 14 护栏。
 """
 
 import os
@@ -81,13 +81,13 @@ check("没用 SwiftUI iOS 15 才有的 Material（只用 UIBlurEffect 包装）"
       ".ultraThinMaterial" not in VIEW
       and ".thinMaterial" not in VIEW)
 
-# ---------------------------------------------------------------- 3. 点组展开（逻辑复核，v1.0.37 改横向）
+# ---------------------------------------------------------------- 3. 点组展开（逻辑复核，v1.0.38 改网格）
 check("有展开状态 railExpandedGroupTitle（nil = 全部收起）",
       "@State private var railExpandedGroupTitle: String? = nil" in VIEW)
-check("组内预设改到竖条右侧第二列，不再插进同一列（v1.0.37 横向展开）",
-      "private var previewExpandedColumn" in VIEW
-      and "ForEach(group.presets)" not in VIEW[VIEW.find("private var previewFilterRail"):VIEW.find("private struct RailGroupTopKey")]
-      and "ForEach(group.presets)" in VIEW[VIEW.find("private var previewExpandedColumn"):])
+check("组内预设改到竖条右侧网格，不再插进同一列（v1.0.38 网格一次全显）",
+      "private func previewExpandedGrid(" in VIEW
+      and "previewExpandedColumn" not in VIEW
+      and "ForEach(group.presets[start..<end])" in VIEW[VIEW.find("private func previewExpandedGrid"):VIEW.find("/// 磨砂玻璃背景")])
 check("点组切换展开/收起（一次只展开一组）",
       "let expanding = railExpandedGroupTitle != group.title" in VIEW
       and "railExpandedGroupTitle = expanding ? group.title : nil" in VIEW)
@@ -95,17 +95,14 @@ check("选中态两处都有标记（预设变蓝、所在组也变蓝）",
       "selectedPresetGroupTitle" in VIEW
       and "selected: selectedPresetGroupTitle == group.title" in VIEW)
 
-# ---------------------------------------------------------------- 3b. 点组真的展开（v1.0.37：第二列对齐用 PreferenceKey）
-# v1.0.34 的旧根因（预设插在组芯片上方、插入点在可视区外面）已随横向
-# 展开消失：第二列第一个预设用 RailGroupTopKey 传上来的可见 minY 对齐
-# 被点分组的顶部，详见 test_v137。
-check("旧的 ScrollViewReader 滚回没了（横向展开不再需要）",
+# ---------------------------------------------------------------- 3b. 点组真的展开（v1.0.38：对齐机制随第二列一起删了）
+# v1.0.34 的旧根因（预设插在组芯片上方、插入点在可视区外面）已随网格
+# 展开消失：网格顶对齐，不用跟被点分组的可见位置对齐；RailGroupTopKey /
+# railGroupTops / expandedColumnTopPadding 全删了，详见 test_v138 §2。
+check("旧的 ScrollViewReader 滚回没了（网格展开不再需要）",
       "ScrollViewReader" not in VIEW
       and "scrollTo" not in VIEW
       and "rail-group-" not in VIEW)
-check("第二列对齐用 PreferenceKey（RailGroupTopKey，详见 test_v137）",
-      "private struct RailGroupTopKey: PreferenceKey" in VIEW
-      and ".onPreferenceChange(RailGroupTopKey.self)" in VIEW)
 check("展开带动画（变化看得见）",
       "withAnimation" in VIEW)
 check("芯片点按区域是整个矩形（转 90° 的字别把热区带偏）",
@@ -120,9 +117,9 @@ check("空状态整块仍是删掉的（取景页无未连接提示块）",
       "disconnectedEmptyState" not in VIEW)
 
 # ---------------------------------------------------------------- 5. 版本 + iOS 14 护栏
-check("版本 1.0.37 / build 38 两处一致",
-      "MARKETING_VERSION: 1.0.37" in YML and "CURRENT_PROJECT_VERSION: 38" in YML and
-      "<string>1.0.37</string>" in PLIST and "<string>38</string>" in PLIST)
+check("版本 1.0.38 / build 39 两处一致",
+      "MARKETING_VERSION: 1.0.38" in YML and "CURRENT_PROJECT_VERSION: 39" in YML and
+      "<string>1.0.38</string>" in PLIST and "<string>39</string>" in PLIST)
 check("iOS 14 护栏：没有 iOS 15+ 才有的 API（新式 alert / Button(role:) / .tint / 闭包 overlay）",
       "Button(role:" not in VIEW and ".tint(" not in VIEW
       and ".background(_:in:)" not in VIEW)

@@ -145,11 +145,11 @@ check("仍无 0x90CE 删槽代码（注释除外）",
 print("== 6. 版本 + iOS 14 护栏 ==")
 yml = read("project.yml")
 plist = read("Z30Control/Info.plist")
-check("版本 1.0.37 / build 38 两处一致",
-      "MARKETING_VERSION: 1.0.37" in yml
-      and "CURRENT_PROJECT_VERSION: 38" in yml
-      and "<string>1.0.37</string>" in plist
-      and "<string>38</string>" in plist)
+check("版本 1.0.38 / build 39 两处一致",
+      "MARKETING_VERSION: 1.0.38" in yml
+      and "CURRENT_PROJECT_VERSION: 39" in yml
+      and "<string>1.0.38</string>" in plist
+      and "<string>39</string>" in plist)
 check("部署目标还是 14.0", 'deploymentTarget: "14.0"' in yml)
 check("project.yml 没有 info: 块（忽略注释行）",
       not any(re.match(r"\s*info\s*:", ln) for ln in yml.splitlines()

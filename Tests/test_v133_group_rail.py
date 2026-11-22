@@ -1,8 +1,8 @@
 """v1.0.34 回归：取景页左侧滤镜条改成组内联展开 + 磨砂玻璃 + 顶到最上方，
 未连接的空状态整块删掉。
 
-v1.0.37：展开方式改成横向第二列（见 test_v137）——组内预设不再插进
-同一列；本套件的展开断言已同步改成横向展开，其他检查点不变。
+v1.0.38：展开方式改成网格一次全显（见 test_v138）——组内预设不再插进
+同一列、也不再是竖条右侧单列；本套件的展开断言已同步改成网格展开，其他检查点不变。
 
 用户 2026-11-22 19:40 对着 v1.0.33 截图圈改：
 红圈（左侧竖条）：顶到最上方；背景不要白色了，改磨砂玻璃质感；
@@ -11,8 +11,8 @@ v1.0.37：展开方式改成横向第二列（见 test_v137）——组内预设
 只留在「控制」页。
 
 检查点：
-1. 组内联展开：平时只显示「原图」+ 11 个组名；点组在该组上方展开
-   组内预设（数量与该组一致），再点收起；一次只展开一组；没有
+1. 网格展开：平时只显示「原图」+ 11 个组名；点组在竖条右侧展开网格
+   （数量与该组一致，一次全显不滚动），再点收起；一次只展开一组；没有
    「← 分组」返回入口（两级钻取没了）。
 2. 选中态：展开的预设芯片变蓝；它所在的组名也变蓝
    （selectedPresetGroupTitle）。
@@ -25,7 +25,7 @@ v1.0.37：展开方式改成横向第二列（见 test_v137）——组内预设
 6. 字仍顺时针转 90°（跟框一个方向）；芯片窄而高（宽 30pt、高随字数走）。
 7. 点选仍能触发预览（点预设立即应用、点原图清除）；预览只改显示，
    不写相机。
-8. 版本 1.0.37 / build 38 两处一致；iOS 14 护栏。
+8. 版本 1.0.38 / build 39 两处一致；iOS 14 护栏。
 """
 
 import os
@@ -79,11 +79,11 @@ check("平时只显示「原图」+ 11 个组名",
       'previewChip(id: nil, title: "原图")' in rail
       and "ForEach(PictCtrlPresets.groups)" in rail)
 groups_block = rail.split("ForEach(PictCtrlPresets.groups)", 1)[1]
-railfunc = VIEW[rail_start:VIEW.find("private struct RailGroupTopKey")]
-col_block = VIEW[VIEW.find("private var previewExpandedColumn"):]
-check("组内预设改到竖条右侧第二列，不再插进同一列（v1.0.37 横向展开）",
+railfunc = VIEW[rail_start:VIEW.find("private struct PreviewGridLayout")]
+grid_block = VIEW[VIEW.find("private func previewExpandedGrid"):VIEW.find("/// 磨砂玻璃背景")]
+check("组内预设改到竖条右侧网格，不再插进同一列（v1.0.38 网格一次全显）",
       "ForEach(group.presets)" not in railfunc
-      and "ForEach(group.presets)" in col_block)
+      and "ForEach(group.presets[start..<end])" in grid_block)
 check("点组切换展开/收起（同组再点就收起）",
       "railExpandedGroupTitle = expanding ? group.title : nil" in VIEW
       and "let expanding = railExpandedGroupTitle != group.title" in VIEW)
@@ -148,8 +148,9 @@ check("芯片文字顺时针转 90°（跟框一个方向）",
 check("芯片是单行字（没有横排的两行）", ".lineLimit(2)" not in rail)
 check("芯片定宽防换行（fixedSize 横向）",
       ".fixedSize(horizontal: true, vertical: false)" in rail)
-check("芯片窄而高：宽 30pt，高随字数走",
-      ".frame(width: 30, height: railChipHeight(for: title))" in rail)
+check("竖条芯片窄而高：宽 30pt，高随字数走（railChipHeight 经 filterChipButton）",
+      "height: railChipHeight(for: title)" in rail
+      and ".frame(width: 30, height: height)" in rail)
 check("芯片高按字数算（13pt/字 + 16pt 留白）",
       "CGFloat(title.count) * 13 + 16" in rail)
 
@@ -169,9 +170,9 @@ for needle, label in [
 # ---------------------------------------------------------------- 8. 版本 + iOS 14 护栏
 YML = read("project.yml")
 PLIST = read("Z30Control/Info.plist")
-check("版本 1.0.37 / build 38 两处一致",
-      "MARKETING_VERSION: 1.0.37" in YML and "CURRENT_PROJECT_VERSION: 38" in YML and
-      "<string>1.0.37</string>" in PLIST and "<string>38</string>" in PLIST)
+check("版本 1.0.38 / build 39 两处一致",
+      "MARKETING_VERSION: 1.0.38" in YML and "CURRENT_PROJECT_VERSION: 39" in YML and
+      "<string>1.0.38</string>" in PLIST and "<string>39</string>" in PLIST)
 check("部署目标还是 14.0", 'deploymentTarget: "14.0"' in YML)
 for pat, label in [
     (r"onTapGesture\(.*location", "onTapGesture 带 location（iOS 17）"),
